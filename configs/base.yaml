@@ -1,0 +1,53 @@
+data:
+  train_path: data/train.csv
+  # 開發時可只取部分日期 / 股票加速；正式跑設為 null
+  max_dates: null
+  max_stocks: null
+
+cv:
+  n_folds: 5
+  embargo_days: 5        # 訓練集最後一天與驗證集第一天之間空出的日期數
+  holdout_frac: 0.10     # 最後 10% 日期完全不碰，到第 7 週才用一次
+  min_train_frac: 0.50   # 第一折訓練集至少佔非 holdout 日期的比例
+
+features:
+  # 實作順序：basic + auction + time → baseline；再加 temporal、cross_sectional、index、stock
+  groups: [basic, auction, time, temporal, cross_sectional, index, stock]
+  temporal:
+    cols: [imb_ratio_signed, book_imb, ref_wap_gap, wap, matched_size, imbalance_size]
+    lags: [1, 2, 3, 6]
+    windows: [3, 6]
+  cross_sectional:
+    cols: [imb_ratio_signed, book_imb, ref_wap_gap, spread, size_imb, wap_ret_1]
+  # 指數權重：null → 從訓練資料以 NNLS 估計（見 src/index_weights.py）
+  index_weights_path: null
+
+lgb:
+  objective: mae
+  learning_rate: 0.05
+  num_leaves: 127
+  min_child_samples: 200
+  feature_fraction: 0.7
+  bagging_fraction: 0.7
+  bagging_freq: 1
+  lambda_l1: 0.1
+  lambda_l2: 1.0
+  max_bin: 255
+  verbose: -1
+  num_threads: 0
+  num_boost_round: 3000
+  early_stopping_rounds: 100
+
+nn:
+  hidden: [256, 128, 64]
+  dropout: 0.2
+  stock_emb_dim: 8
+  lr: 0.001
+  weight_decay: 0.00001
+  batch_size: 4096
+  epochs: 20
+  patience: 3
+  scaler: quantile       # quantile（rank-gauss）或 standard
+  seed: 42
+
+output_dir: reports

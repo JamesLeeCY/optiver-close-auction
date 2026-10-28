@@ -1,0 +1,27 @@
+name: leakage-tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install (CPU-only torch)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+      - name: Leakage & CV tests
+        run: pytest -q tests
+      - name: Smoke-run pipeline on synthetic data
+        run: |
+          python scripts/make_synthetic.py --stocks 20 --days 60
+          python -m src.train_lgb --config configs/smoke.yaml
+          python -m src.train_nn --config configs/smoke.yaml
+          python -m src.ensemble --config configs/smoke.yaml --models lgb,nn
