@@ -3,6 +3,7 @@
     python -m src.train_lgb --config configs/base.yaml
     python -m src.train_lgb --config configs/base.yaml --drop-groups temporal,index --tag no_temporal
     python -m src.train_lgb --config configs/base.yaml --holdout     # 第 7 週才跑，且只跑一次
+    python -m src.train_lgb --config configs/base.yaml --holdout-rounds 557  # 跳過 CV，直接用指定輪數
 """
 from __future__ import annotations
 
@@ -74,8 +75,8 @@ def run_cv(p: Prepared, cfg: dict, drop_groups: list[str] | None = None, verbose
 
 def run_holdout(p: Prepared, cfg: dict, n_rounds: int, drop_groups, out: Path) -> float:
     log = out / "holdout_log.csv"
-    if log.exists():
-        print(f"警告：holdout 已經用過（見 {log}）。重複使用會讓它失去意義。")
+    if log.exists() and (pd.read_csv(log)["model"] == "lgb").any():
+        print(f"警告：lgb 的 holdout 已經用過（見 {log}）。重複使用會讓它失去意義。")
     cv_dates = np.sort(np.concatenate([p.folds[-1].train_dates, p.folds[-1].val_dates]))
     emb = cfg["cv"]["embargo_days"]
     train_dates = cv_dates[:-emb] if emb else cv_dates
@@ -84,7 +85,11 @@ def run_holdout(p: Prepared, cfg: dict, n_rounds: int, drop_groups, out: Path) -
     feats = _select(feats, drop_groups)
     params, _, _ = _split_params(cfg["lgb"])
     model = lgb.train(params, lgb.Dataset(tr[feats], tr["target"]), n_rounds)
-    score = mae(ho["target"], model.predict(ho[feats]))
+    pred = model.predict(ho[feats])
+    # 存下預測，供 ensemble 計算 holdout 分數
+    ho[["stock_id", "date_id", "seconds_in_bucket", "target"]].assign(
+        pred=pred.astype(np.float32)).to_parquet(out / "holdout_pred_lgb.parquet")
+    score = mae(ho["target"], pred)
     entry = pd.DataFrame([{"time": datetime.now().isoformat(timespec="seconds"), "model": "lgb",
                            "n_rounds": n_rounds, "holdout_mae": score,
                            "holdout_mae_zero": mae(ho["target"], 0.0)}])
@@ -98,6 +103,8 @@ def main():
     ap.add_argument("--drop-groups", default="", help="以逗號分隔，例如 temporal,index")
     ap.add_argument("--tag", default="lgb")
     ap.add_argument("--holdout", action="store_true")
+    ap.add_argument("--holdout-rounds", type=int, default=None,
+                    help="跳過 CV，直接以此輪數訓練並評估 holdout")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -108,6 +115,10 @@ def main():
     p = prepare(cfg)
     print(f"{len(p.df):,} rows, {len(p.features)} features, {len(p.folds)} folds, "
           f"holdout {len(p.holdout_dates)} days")
+    if args.holdout_rounds:
+        score = run_holdout(p, cfg, args.holdout_rounds, drop, out)
+        print(f"Holdout MAE {score:.5f}")
+        return
     res = run_cv(p, cfg, drop)
     print(f"CV MAE {res['cv_mae']:.5f} | predict-0 {res['cv_mae_zero']:.5f}")
 
