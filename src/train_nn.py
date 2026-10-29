@@ -46,16 +46,21 @@ class Preprocessor:
                                          subsample=200_000, random_state=self.seed)
         else:
             self.t = StandardScaler()
-        self.t.fit(X)
+        # 以 float64 fit：float32 算出的分位數會讓剛好落在分位點上的值對應到不同結果
+        self.t.fit(X.astype(np.float64))
         return self
 
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        Z = self.t.transform(X)
-        return np.nan_to_num(np.clip(Z, -5, 5), nan=0.0).astype(np.float32)
+    def transform(self, X: np.ndarray, chunk: int = 500_000) -> np.ndarray:
+        # 分批轉換、直接寫進 float32：全量一折 400 萬列，一次轉會產生好幾份 float64 暫存
+        out = np.empty(X.shape, dtype=np.float32)
+        for i in range(0, len(X), chunk):
+            Z = self.t.transform(X[i:i + chunk].astype(np.float64))
+            out[i:i + chunk] = np.nan_to_num(np.clip(Z, -5, 5), nan=0.0)
+        return out
 
 
 def _numeric(df: pd.DataFrame, feats: list[str]) -> np.ndarray:
-    X = df[feats].to_numpy(np.float64)
+    X = df[feats].to_numpy(np.float32)
     X[~np.isfinite(X)] = np.nan
     return X
 
@@ -63,8 +68,10 @@ def _numeric(df: pd.DataFrame, feats: list[str]) -> np.ndarray:
 def train_fold(tr, va, feats, ncfg, n_stocks, verbose=True):
     torch.manual_seed(ncfg["seed"])
     num = [c for c in feats if c != "stock_id"]
-    pre = Preprocessor(ncfg["scaler"], ncfg["seed"]).fit(_numeric(tr, num))
-    Xtr = torch.from_numpy(pre.transform(_numeric(tr, num)))
+    Xtr_raw = _numeric(tr, num)
+    pre = Preprocessor(ncfg["scaler"], ncfg["seed"]).fit(Xtr_raw)
+    Xtr = torch.from_numpy(pre.transform(Xtr_raw))
+    del Xtr_raw
     Xva = torch.from_numpy(pre.transform(_numeric(va, num)))
     Str = torch.from_numpy(tr["stock_id"].to_numpy(np.int64))
     Sva = torch.from_numpy(va["stock_id"].to_numpy(np.int64))
