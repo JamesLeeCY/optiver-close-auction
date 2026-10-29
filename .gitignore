@@ -1,6 +1,9 @@
 data/*
 !data/.gitkeep
 reports/smoke/
+reports/trial*/
+# OOF 預測可重跑產生、檔案大；只追蹤 cv / summary / importance 等小型結果
+reports/**/*.parquet
 __pycache__/
 .pytest_cache/
 *.pyc
