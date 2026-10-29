@@ -33,6 +33,8 @@ def ablation(cfg: dict, out: Path):
         rows.append({"dropped": g, "cv_mae": r["cv_mae"], "delta": r["cv_mae"] - base["cv_mae"],
                      "n_features": r["n_features"]})
         print(f"-{g}: {r['cv_mae']:.5f} (Δ {rows[-1]['delta']:+.5f})")
+        # 每組跑完就存：全量一次要好幾小時，中途中斷也保留已完成的部分
+        pd.DataFrame(rows).to_csv(out / "ablation.csv", index=False)
     table = pd.DataFrame(rows)
     table.to_csv(out / "ablation.csv", index=False)
     (out / "ablation.md").write_text(table.to_markdown(index=False, floatfmt=".5f"))
