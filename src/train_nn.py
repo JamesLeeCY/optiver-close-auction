@@ -114,6 +114,8 @@ def main():
     ap.add_argument("--tag", default="nn")
     args = ap.parse_args()
     cfg = load_config(args.config)
+    if cfg["nn"].get("num_threads"):
+        torch.set_num_threads(cfg["nn"]["num_threads"])
     out = Path(cfg["output_dir"])
     out.mkdir(parents=True, exist_ok=True)
 
