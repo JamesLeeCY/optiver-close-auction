@@ -1,7 +1,7 @@
 # Optiver Trading at the Close — Nasdaq 收盤競價價格預測
 
 > **一句話摘要**：以 purged walk-forward CV 訓練 LightGBM + MLP ensemble，預測個股 WAP 未來 60 秒相對合成指數的變動（bps）。
-> CV MAE **[待填]** · Private LB **[待填]**（第一名約 **[待填]**）。
+> CV MAE **6.1522** · Holdout MAE **5.8242**（各比預測 0 低 2.35% / 2.32%）。
 
 <!-- 前 30 秒要讓面試官看到結果表與一張圖：完成後把 reports/ 的圖放這裡 -->
 
@@ -28,14 +28,16 @@ fold 2: [train ........................]  gap  [val]
 
 ## 3. 結果
 
-| 模型 | CV MAE | Private LB | 訓練時間 |
+| 模型 | CV MAE | Holdout MAE | CV 訓練時間（5 折） |
 | --- | --- | --- | --- |
-| 預測 0 | [待填] | — | — |
-| LightGBM | [待填] | [待填] | [待填] |
-| MLP | [待填] | — | [待填] |
-| Ensemble（nested 權重） | [待填] | [待填] | — |
+| 預測 0 | 6.3001 | 5.9623 | — |
+| LightGBM | 6.1585（−2.25%） | 5.8314（−2.20%） | 28 分鐘（6 執行緒） |
+| MLP | 6.1656（−2.13%） | 5.8361（−2.12%） | 65 分鐘（4 執行緒） |
+| Ensemble（nested 權重） | **6.1522（−2.35%）** | **5.8242（−2.32%）** | — |
 
-兩模型 OOF 相關係數：[待填]（`reports/ensemble_report.json`）
+括號內為相對預測 0 的改善。Holdout 為最後 48 天，模型以全部 CV 日期（扣掉 embargo）重新訓練，LightGBM 用 CV 平均最佳輪數 557 輪、MLP 用 10 個 epoch；ensemble 權重（LightGBM 0.59 / MLP 0.41）只在 OOF 上決定，未在 holdout 上調整。兩個資料期間的波動不同，絕對值不能直接比，看相對改善：CV 與 holdout 幾乎一致，代表沒有對驗證期過擬合。
+
+兩模型相關係數：OOF 0.893、holdout 0.879（`reports/ensemble_report.json`）。ensemble 在 5 折都優於兩個單一模型；簡單平均（各 0.5）的 CV MAE 為 6.1525，與最佳權重幾乎相同。
 
 ## 4. 哪些特徵有效、為什麼
 
