@@ -1,12 +1,15 @@
 """MLP：同一套特徵 + stock_id embedding，和 LightGBM 用完全相同的折。
 
     python -m src.train_nn --config configs/base.yaml
+    python -m src.train_nn --config configs/base.yaml --holdout            # CV 後再評估 holdout（只跑一次）
+    python -m src.train_nn --config configs/base.yaml --holdout-epochs 10  # 跳過 CV，直接用指定 epoch 數
 """
 from __future__ import annotations
 
 import argparse
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -65,8 +68,11 @@ def _numeric(df: pd.DataFrame, feats: list[str]) -> np.ndarray:
     return X
 
 
-def train_fold(tr, va, feats, ncfg, n_stocks, verbose=True):
+def train_fold(tr, va, feats, ncfg, n_stocks, epochs=None, verbose=True):
+    """epochs 為 None：在 va 上 early stopping。給定 epochs：固定訓練這麼多輪、不看 va 的 target
+    （用於 holdout），學習率改依訓練 loss 調整。"""
     torch.manual_seed(ncfg["seed"])
+    fixed = epochs is not None
     num = [c for c in feats if c != "stock_id"]
     Xtr_raw = _numeric(tr, num)
     pre = Preprocessor(ncfg["scaler"], ncfg["seed"]).fit(Xtr_raw)
@@ -76,7 +82,7 @@ def train_fold(tr, va, feats, ncfg, n_stocks, verbose=True):
     Str = torch.from_numpy(tr["stock_id"].to_numpy(np.int64))
     Sva = torch.from_numpy(va["stock_id"].to_numpy(np.int64))
     ytr = torch.from_numpy(tr["target"].to_numpy(np.float32))
-    yva = va["target"].to_numpy(np.float32)
+    yva = None if fixed else va["target"].to_numpy(np.float32)
 
     model = MLP(len(num), n_stocks, ncfg["stock_emb_dim"], ncfg["hidden"], ncfg["dropout"])
     opt = torch.optim.AdamW(model.parameters(), lr=ncfg["lr"], weight_decay=ncfg["weight_decay"])
@@ -90,35 +96,70 @@ def train_fold(tr, va, feats, ncfg, n_stocks, verbose=True):
             return torch.cat([model(X[i:i + 65536], S[i:i + 65536])
                               for i in range(0, len(X), 65536)]).numpy()
 
-    best, best_state, bad = np.inf, None, 0
-    for epoch in range(ncfg["epochs"]):
+    best, best_state, best_epoch, bad = np.inf, None, 0, 0
+    for epoch in range(epochs if fixed else ncfg["epochs"]):
         model.train()
         perm = torch.randperm(len(Xtr))
+        total = 0.0
         for i in range(0, len(perm), bs):
             idx = perm[i:i + bs]
             opt.zero_grad()
             loss = loss_fn(model(Xtr[idx], Str[idx]), ytr[idx])
             loss.backward()
             opt.step()
+            total += loss.item() * len(idx)
+        if fixed:
+            train_loss = total / len(perm)
+            sched.step(train_loss)
+            if verbose:
+                print(f"  epoch {epoch}: train MAE {train_loss:.5f}")
+            continue
         score = mae(yva, predict(Xva, Sva))
         sched.step(score)
         if verbose:
             print(f"  epoch {epoch}: val MAE {score:.5f}")
         if score < best - 1e-5:
-            best, bad = score, 0
+            best, best_epoch, bad = score, epoch + 1, 0
             best_state = {k: v.clone() for k, v in model.state_dict().items()}
         else:
             bad += 1
             if bad >= ncfg["patience"]:
                 break
+    if fixed:
+        return predict(Xva, Sva), None, epochs
     model.load_state_dict(best_state)
-    return predict(Xva, Sva), best, epoch + 1
+    return predict(Xva, Sva), best, best_epoch
+
+
+def run_holdout(p, cfg, n_stocks, epochs: int, out: Path) -> float:
+    log = out / "holdout_log.csv"
+    if log.exists() and (pd.read_csv(log)["model"] == "nn").any():
+        print(f"警告：nn 的 holdout 已經用過（見 {log}）。重複使用會讓它失去意義。")
+    # 與 train_lgb.run_holdout 相同：全部 CV 日期去掉最後 embargo 天
+    cv_dates = np.sort(np.concatenate([p.folds[-1].train_dates, p.folds[-1].val_dates]))
+    emb = cfg["cv"]["embargo_days"]
+    train_dates = cv_dates[:-emb] if emb else cv_dates
+    tr, ho, feats = fold_frames(p, train_dates, p.holdout_dates, "stock" in cfg["features"]["groups"])
+    print(f"holdout: train {len(train_dates)} days, {epochs} epochs, holdout {len(p.holdout_dates)} days")
+    pred, _, _ = train_fold(tr, ho, feats, cfg["nn"], n_stocks, epochs=epochs)
+    # 存下預測，供 ensemble 計算 holdout 分數
+    ho[["stock_id", "date_id", "seconds_in_bucket", "target"]].assign(
+        pred=pred.astype(np.float32)).to_parquet(out / "holdout_pred_nn.parquet")
+    score = mae(ho["target"], pred)
+    entry = pd.DataFrame([{"time": datetime.now().isoformat(timespec="seconds"), "model": "nn",
+                           "n_rounds": epochs, "holdout_mae": score,
+                           "holdout_mae_zero": mae(ho["target"], 0.0)}])
+    entry.to_csv(log, mode="a", header=not log.exists(), index=False)
+    return score
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/base.yaml")
     ap.add_argument("--tag", default="nn")
+    ap.add_argument("--holdout", action="store_true", help="CV 後以平均最佳 epoch 數評估 holdout")
+    ap.add_argument("--holdout-epochs", type=int, default=None,
+                    help="跳過 CV，直接以此 epoch 數訓練並評估 holdout")
     args = ap.parse_args()
     cfg = load_config(args.config)
     if cfg["nn"].get("num_threads"):
@@ -128,6 +169,10 @@ def main():
 
     p = prepare(cfg)
     n_stocks = int(p.df["stock_id"].max()) + 1
+    if args.holdout_epochs:
+        score = run_holdout(p, cfg, n_stocks, args.holdout_epochs, out)
+        print(f"Holdout MAE {score:.5f}")
+        return
     use_ss = "stock" in cfg["features"]["groups"]
     oof, rows = [], []
     for f in p.folds:
@@ -135,7 +180,7 @@ def main():
         tr, va, feats = fold_frames(p, f.train_dates, f.val_dates, use_ss)
         print(f"fold {f.fold}")
         pred, score, epochs = train_fold(tr, va, feats, cfg["nn"], n_stocks)
-        rows.append({"fold": f.fold, "mae": score, "epochs": epochs,
+        rows.append({"fold": f.fold, "mae": score, "best_epoch": epochs,
                      "seconds": round(time.time() - t0, 1)})
         print(f"fold {f.fold}: MAE {score:.5f} [{rows[-1]['seconds']}s]")
         oof.append(va[["stock_id", "date_id", "seconds_in_bucket", "target"]]
@@ -145,7 +190,11 @@ def main():
     print(f"CV MAE {cv:.5f}")
     pd.DataFrame(rows).to_csv(out / f"cv_{args.tag}.csv", index=False)
     oof.to_parquet(out / f"oof_{args.tag}.parquet")
-    (out / f"summary_{args.tag}.json").write_text(json.dumps({"cv_mae": cv}, indent=2))
+    summary = {"cv_mae": cv, "mean_best_epoch": int(round(np.mean([r["best_epoch"] for r in rows])))}
+    if args.holdout:
+        summary["holdout_mae"] = run_holdout(p, cfg, n_stocks, summary["mean_best_epoch"], out)
+        print(f"Holdout MAE {summary['holdout_mae']:.5f}")
+    (out / f"summary_{args.tag}.json").write_text(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":
