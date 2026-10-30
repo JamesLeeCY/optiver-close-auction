@@ -1,7 +1,7 @@
 # Optiver Trading at the Close — Nasdaq 收盤競價價格預測
 
 > **一句話摘要**：以 purged walk-forward CV 訓練 LightGBM + MLP ensemble，預測個股 WAP 未來 60 秒相對合成指數的變動（bps）。
-> CV MAE **6.1522** · Holdout MAE **5.8242**（各比預測 0 低 2.35% / 2.32%）。
+> CV MAE **6.1494** · Holdout MAE **5.8210**（各比預測 0 低 2.39% / 2.37%，含指數中性後處理）。
 
 <!-- 前 30 秒要讓面試官看到結果表與一張圖：完成後把 reports/ 的圖放這裡 -->
 
@@ -33,11 +33,14 @@ fold 2: [train ........................]  gap  [val]
 | 預測 0 | 6.3001 | 5.9623 | — |
 | LightGBM | 6.1585（−2.25%） | 5.8314（−2.20%） | 28 分鐘（6 執行緒） |
 | MLP | 6.1656（−2.13%） | 5.8361（−2.12%） | 65 分鐘（4 執行緒） |
-| Ensemble（nested 權重） | **6.1522（−2.35%）** | **5.8242（−2.32%）** | — |
+| Ensemble（nested 權重） | 6.1522（−2.35%） | 5.8242（−2.32%） | — |
+| Ensemble + 指數中性後處理 | **6.1494（−2.39%）** | **5.8210（−2.37%）** | — |
 
 括號內為相對預測 0 的改善。Holdout 為最後 48 天，模型以全部 CV 日期（扣掉 embargo）重新訓練，LightGBM 用 CV 平均最佳輪數 557 輪、MLP 用 10 個 epoch；ensemble 權重（LightGBM 0.59 / MLP 0.41）只在 OOF 上決定，未在 holdout 上調整。兩個資料期間的波動不同，絕對值不能直接比，看相對改善：CV 與 holdout 幾乎一致，代表沒有對驗證期過擬合。
 
 兩模型相關係數：OOF 0.893、holdout 0.879（`reports/ensemble_report.json`）。ensemble 在 5 折都優於兩個單一模型；簡單平均（各 0.5）的 CV MAE 為 6.1525，與最佳權重幾乎相同。
+
+**指數中性後處理**：target 是「個股 − 指數」，同一時點依指數權重加權後約為 0（實測平均 |·| 只有 0.04–0.05 bps），但模型預測的加權平均有 0.15–0.22 bps，混進了不該有的「整體漲跌」成分。每個時點把預測減掉它的指數加權平均（只對有資料的股票、權重重新正規化）後，兩個單一模型與 ensemble 在 CV 和 holdout 都改善約 0.003（LightGBM 6.1551 / 5.8281，MLP 6.1627 / 5.8323）。係數固定為 1，不調參：在 OOF 上掃 0–1.5，0.8–1.2 之間的差異小於 0.0005。
 
 ## 4. 哪些特徵有效、為什麼
 
@@ -86,7 +89,7 @@ bash scripts/download_data.sh
 pytest -q tests                                       # 洩漏與 CV 測試
 python -m src.train_lgb --config configs/base.yaml    # LightGBM baseline
 python -m src.train_nn  --config configs/base.yaml    # MLP
-python -m src.ensemble  --config configs/base.yaml --models lgb,nn
+python -m src.ensemble  --config configs/base.yaml --models lgb,nn   # 含指數中性後處理
 python -m src.analyze ablation --config configs/base.yaml
 python -m src.analyze shap     --config configs/base.yaml
 python -m src.train_lgb --config configs/base.yaml --holdout   # 只跑一次
