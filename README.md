@@ -41,17 +41,25 @@ fold 2: [train ........................]  gap  [val]
 
 ## 4. 哪些特徵有效、為什麼
 
-| 特徵組 | 例子 | 市場理由 | 拿掉後 ΔMAE |
+| 特徵組 | 例子 | 市場理由 | 拿掉後 ΔMAE（CV） |
 | --- | --- | --- | --- |
-| basic | spread、book imbalance | 掛單量不對稱反映短期買賣壓力 | [待填] |
-| auction | imbalance / matched、帶方向 imbalance | 未配對量會推動最終收盤價 | [待填] |
-| time | seconds_in_bucket、300 秒旗標 | 300 秒後才有 far / near price | [待填] |
-| temporal | lag、diff、rolling mean（只往前看） | 失衡在擴大還是收斂 | [待填] |
-| cross_sectional | 減去同時點平均、排名 | target 是相對指數 | [待填] |
-| index | 個股報酬減加權指數報酬 | 直接對應 target 定義 | [待填] |
-| stock | 個股 target 波動度（只從訓練折算） | 不同股票雜訊尺度不同 | [待填] |
+| basic | spread、book imbalance | 掛單量不對稱反映短期買賣壓力 | +0.0006 |
+| auction | imbalance / matched、帶方向 imbalance | 未配對量會推動最終收盤價 | +0.0027 |
+| time | time_to_close、300 秒旗標 | 300 秒後才有 far / near price | +0.0011 |
+| temporal | lag、diff、rolling mean（只往前看） | 失衡在擴大還是收斂 | **+0.0164** |
+| cross_sectional | 減去同時點平均、排名 | target 是相對指數 | +0.0002 |
+| index | 個股報酬減加權指數報酬 | 直接對應 target 定義 | +0.0018 |
+| stock | 個股 target 波動度（只從訓練折算） | 不同股票雜訊尺度不同 | +0.0020 |
 
-數字來自 `python -m src.analyze ablation`；SHAP 圖見 `reports/shap_summary.png`。
+ΔMAE 為拿掉該組後 LightGBM 5 折 CV MAE 的增加量（完整特徵 6.15846，數字越大代表越重要），來自 `python -m src.analyze ablation`（`reports/ablation.md`）。原始欄位（價格、量、`seconds_in_bucket`、`stock_id` 等）每次都保留，沒有做 ablation。
+
+- **temporal 遠比其他組重要**：拿掉後變差 0.0164，是第二名的 6 倍。失衡在擴大還是收斂，比單一時點的數值更有資訊。
+- **auction、stock、index、time 各貢獻 0.001–0.003**。
+- **cross_sectional 與 basic 拿掉幾乎沒影響**，但這不代表它們沒有資訊：SHAP 顯示 cross_sectional 是模型第二常用的一組，SHAP 最重要的單一特徵 `wap_mid_gap` 也屬於 basic。兩者的差異來自特徵重疊，拿掉一組時，模型能從其他特徵補回大部分資訊，例如 basic 的價差類特徵可由原始的 bid / ask / wap 重建，cross_sectional 的相對資訊有一部分由 index 組提供。
+
+![SHAP summary](reports/shap_summary.png)
+
+SHAP（最後一折的模型、驗證集抽 2 萬筆）依組加總的平均 |SHAP|：temporal 1.48、cross_sectional 0.80、basic 0.62、index 0.59、auction 0.46、原始欄位 0.41、stock 0.15、time 0.05（`reports/shap_by_group.csv`）。單一特徵最重要的是 `wap_mid_gap`：WAP 高於中價時，模型預測接下來相對指數下跌，呈現短期均值回歸。
 
 ## 5. 沒用的嘗試
 
