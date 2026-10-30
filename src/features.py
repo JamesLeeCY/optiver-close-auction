@@ -80,11 +80,17 @@ def add_returns(df: pd.DataFrame, horizons=(1, 3, 6)) -> pd.DataFrame:
     return df
 
 
-def add_temporal(df: pd.DataFrame, cols, lags=(1, 2, 3, 6), windows=(3, 6)) -> pd.DataFrame:
-    df = add_returns(df)
+def add_temporal(df: pd.DataFrame, cols, lags=(1, 2, 3, 6), windows=(3, 6),
+                 ret_horizons=(1, 3, 6), open_cols=()) -> pd.DataFrame:
+    df = add_returns(df, ret_horizons)
     cols = [c for c in cols if c in df.columns]
     g = df.groupby(SEQ, sort=False)
     new = {}
+    # 相對當天第一格的變化：只用該股該日最早一列，不用 transform("first")（它會跳過缺值、拿到之後的值）
+    is_open = (g.cumcount() == 0).to_numpy()
+    for c in [c for c in open_cols if c in df.columns]:
+        opening = df[c].where(is_open).groupby([df[k] for k in SEQ], sort=False).transform("max")
+        new[f"{c}_since_open"] = _f32(df[c] - opening)
     for c in cols:
         for lag in lags:
             prev = g[c].shift(lag)
@@ -165,7 +171,8 @@ def build_features(df: pd.DataFrame, fcfg: dict, index_weights: pd.Series | None
         df = add_time(df)
     if "temporal" in groups:
         t = fcfg.get("temporal", {})
-        df = add_temporal(df, t.get("cols", []), t.get("lags", (1, 2, 3, 6)), t.get("windows", (3, 6)))
+        df = add_temporal(df, t.get("cols", []), t.get("lags", (1, 2, 3, 6)), t.get("windows", (3, 6)),
+                          t.get("ret_horizons", (1, 3, 6)), t.get("open_cols", ()))
     if "cross_sectional" in groups:
         df = add_cross_sectional(df, fcfg.get("cross_sectional", {}).get("cols", []))
     if "index" in groups:
@@ -188,7 +195,7 @@ def feature_groups(cols: list[str]) -> dict[str, list[str]]:
                                    "ref_wap_gap", "ref_mid_gap", "far_near_gap",
                                    "near_ref_gap", "far_ref_gap"},
         "time": lambda c: c in {"after_300", "time_to_close"},
-        "temporal": lambda c: any(s in c for s in ("_lag", "_diff", "_rmean")) or
+        "temporal": lambda c: any(s in c for s in ("_lag", "_diff", "_rmean", "_since_open")) or
                               (c.startswith("wap_ret_")),
         "cross_sectional": lambda c: "_xs_" in c,
         "index": lambda c: c.startswith(("idx_", "rel_")) or c.endswith("_idx") or c == "index_weight",

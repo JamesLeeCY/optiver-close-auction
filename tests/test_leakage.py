@@ -70,3 +70,16 @@ def test_stock_stats_fit_on_train_only(synth, fcfg):
     va2 = va.assign(target=va["target"] * 100)  # 改驗證集 target，不該影響
     b = StockStats().fit(tr).transform(va2)
     pd.testing.assert_frame_equal(a[StockStats.COLS], b[StockStats.COLS])
+
+
+def test_wide_temporal_features_do_not_use_future_seconds(synth):
+    from src.config import load_config
+    from pathlib import Path
+
+    df, w = synth
+    fcfg = load_config(Path(__file__).parents[1] / "configs" / "temporal_wide.yaml")["features"]
+    future = (df["seconds_in_bucket"] > 250).to_numpy()
+    a = build_features(df, fcfg, w)
+    b = build_features(_perturb(df, future), fcfg, w)
+    assert any(c.endswith("_since_open") for c in a.columns)
+    _assert_same(a, b, ~future)

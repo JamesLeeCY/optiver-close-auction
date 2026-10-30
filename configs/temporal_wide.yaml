@@ -1,0 +1,13 @@
+# 擴充時序特徵：更多欄位、更長的 lag 與報酬區間、相對開盤的變化。其他設定同 base。
+inherit: base.yaml
+
+features:
+  temporal:
+    cols: [imb_ratio_signed, book_imb, ref_wap_gap, wap, matched_size, imbalance_size,
+           spread, wap_mid_gap, imb_vs_book, liquidity, ref_mid_gap, near_ref_gap, far_ref_gap]
+    lags: [1, 2, 3, 6, 12]
+    windows: [3, 6, 12]
+    ret_horizons: [1, 3, 6, 12, 24]
+    open_cols: [wap, reference_price, imb_ratio_signed, book_imb, ref_wap_gap]
+
+output_dir: reports/temporal_wide
