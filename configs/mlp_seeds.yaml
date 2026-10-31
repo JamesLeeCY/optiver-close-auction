@@ -1,0 +1,7 @@
+# temporal_wide 的特徵，MLP 用 3 個種子各訓練一次、預測取平均（前處理共用）
+inherit: temporal_wide.yaml
+
+nn:
+  seeds: [42, 43, 44]
+
+output_dir: reports/mlp_seeds

@@ -3,6 +3,8 @@
     python -m src.train_nn --config configs/base.yaml
     python -m src.train_nn --config configs/base.yaml --holdout            # CV 後再評估 holdout（只跑一次）
     python -m src.train_nn --config configs/base.yaml --holdout-epochs 10  # 跳過 CV，直接用指定 epoch 數
+
+設定 nn.seeds（例如 configs/mlp_seeds.yaml）時，每折對每個種子各訓練一次、預測取平均。
 """
 from __future__ import annotations
 
@@ -68,10 +70,19 @@ def _numeric(df: pd.DataFrame, feats: list[str]) -> np.ndarray:
     return X
 
 
+def seeds_of(ncfg: dict) -> list[int]:
+    """nn.seeds 有設就逐一訓練再平均預測；沒設就只用 nn.seed。"""
+    return list(ncfg.get("seeds") or [ncfg["seed"]])
+
+
 def train_fold(tr, va, feats, ncfg, n_stocks, epochs=None, verbose=True):
-    """epochs 為 None：在 va 上 early stopping。給定 epochs：固定訓練這麼多輪、不看 va 的 target
-    （用於 holdout），學習率改依訓練 loss 調整。"""
-    torch.manual_seed(ncfg["seed"])
+    """前處理只做一次（以 nn.seed 抽樣），再對每個種子各訓練一個模型，預測取平均。
+    種子只影響權重初始化、batch 順序與 dropout。
+
+    epochs 為 None：每個種子各自在 va 上 early stopping。給定 epochs：固定訓練這麼多輪、
+    不看 va 的 target（用於 holdout），學習率改依訓練 loss 調整。
+
+    回傳 (平均預測, 平均預測的 MAE 或 None, 各種子最佳 epoch, {種子: 預測})。"""
     fixed = epochs is not None
     num = [c for c in feats if c != "stock_id"]
     Xtr_raw = _numeric(tr, num)
@@ -84,7 +95,20 @@ def train_fold(tr, va, feats, ncfg, n_stocks, epochs=None, verbose=True):
     ytr = torch.from_numpy(tr["target"].to_numpy(np.float32))
     yva = None if fixed else va["target"].to_numpy(np.float32)
 
-    model = MLP(len(num), n_stocks, ncfg["stock_emb_dim"], ncfg["hidden"], ncfg["dropout"])
+    preds, best_epochs = {}, []
+    for seed in seeds_of(ncfg):
+        if verbose:
+            print(f" seed {seed}")
+        preds[seed], ep = _fit_seed(Xtr, Str, ytr, Xva, Sva, yva, ncfg, n_stocks, seed, epochs, verbose)
+        best_epochs.append(ep)
+    pred = np.mean(list(preds.values()), axis=0)
+    return pred, None if fixed else mae(yva, pred), best_epochs, preds
+
+
+def _fit_seed(Xtr, Str, ytr, Xva, Sva, yva, ncfg, n_stocks, seed, epochs=None, verbose=True):
+    torch.manual_seed(seed)
+    fixed = epochs is not None
+    model = MLP(Xtr.shape[1], n_stocks, ncfg["stock_emb_dim"], ncfg["hidden"], ncfg["dropout"])
     opt = torch.optim.AdamW(model.parameters(), lr=ncfg["lr"], weight_decay=ncfg["weight_decay"])
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=1)
     loss_fn = nn.L1Loss()  # 直接對齊 MAE 評分
@@ -126,9 +150,11 @@ def train_fold(tr, va, feats, ncfg, n_stocks, epochs=None, verbose=True):
             if bad >= ncfg["patience"]:
                 break
     if fixed:
-        return predict(Xva, Sva), None, epochs
+        return predict(Xva, Sva), epochs
     model.load_state_dict(best_state)
-    return predict(Xva, Sva), best, best_epoch
+    if verbose:
+        print(f"  best val MAE {best:.5f} @ epoch {best_epoch}")
+    return predict(Xva, Sva), best_epoch
 
 
 def run_holdout(p, cfg, n_stocks, epochs: int, out: Path) -> float:
@@ -141,7 +167,7 @@ def run_holdout(p, cfg, n_stocks, epochs: int, out: Path) -> float:
     train_dates = cv_dates[:-emb] if emb else cv_dates
     tr, ho, feats = fold_frames(p, train_dates, p.holdout_dates, "stock" in cfg["features"]["groups"])
     print(f"holdout: train {len(train_dates)} days, {epochs} epochs, holdout {len(p.holdout_dates)} days")
-    pred, _, _ = train_fold(tr, ho, feats, cfg["nn"], n_stocks, epochs=epochs)
+    pred, _, _, _ = train_fold(tr, ho, feats, cfg["nn"], n_stocks, epochs=epochs)
     # 存下預測，供 ensemble 計算 holdout 分數
     ho[["stock_id", "date_id", "seconds_in_bucket", "target"]].assign(
         pred=pred.astype(np.float32)).to_parquet(out / "holdout_pred_nn.parquet")
@@ -179,18 +205,25 @@ def main():
         t0 = time.time()
         tr, va, feats = fold_frames(p, f.train_dates, f.val_dates, use_ss)
         print(f"fold {f.fold}")
-        pred, score, epochs = train_fold(tr, va, feats, cfg["nn"], n_stocks)
-        rows.append({"fold": f.fold, "mae": score, "best_epoch": epochs,
+        pred, score, epochs, by_seed = train_fold(tr, va, feats, cfg["nn"], n_stocks)
+        y = va["target"].to_numpy()
+        rows.append({"fold": f.fold, "mae": score, "best_epoch": float(np.mean(epochs)),
+                     **{f"mae_s{s}": mae(y, p) for s, p in by_seed.items()},
+                     **{f"best_epoch_s{s}": e for s, e in zip(by_seed, epochs)},
                      "seconds": round(time.time() - t0, 1)})
         print(f"fold {f.fold}: MAE {score:.5f} [{rows[-1]['seconds']}s]")
+        # 各種子的預測也存下來，之後可以比較種子數的影響
         oof.append(va[["stock_id", "date_id", "seconds_in_bucket", "target"]]
-                   .assign(pred=pred.astype(np.float32), fold=f.fold))
+                   .assign(pred=pred.astype(np.float32), fold=f.fold,
+                           **{f"pred_s{s}": p.astype(np.float32) for s, p in by_seed.items()}))
     oof = pd.concat(oof, ignore_index=True)
     cv = mae(oof["target"], oof["pred"])
     print(f"CV MAE {cv:.5f}")
     pd.DataFrame(rows).to_csv(out / f"cv_{args.tag}.csv", index=False)
     oof.to_parquet(out / f"oof_{args.tag}.parquet")
-    summary = {"cv_mae": cv, "mean_best_epoch": int(round(np.mean([r["best_epoch"] for r in rows])))}
+    summary = {"cv_mae": cv, "mean_best_epoch": int(round(np.mean([r["best_epoch"] for r in rows]))),
+               "seeds": seeds_of(cfg["nn"]),
+               "cv_mae_by_seed": {s: mae(oof["target"], oof[f"pred_s{s}"]) for s in seeds_of(cfg["nn"])}}
     if args.holdout:
         summary["holdout_mae"] = run_holdout(p, cfg, n_stocks, summary["mean_best_epoch"], out)
         print(f"Holdout MAE {summary['holdout_mae']:.5f}")

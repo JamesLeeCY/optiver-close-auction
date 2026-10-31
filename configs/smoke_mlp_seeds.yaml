@@ -1,0 +1,8 @@
+# smoke 版 mlp_seeds：合成資料、折數少，只確認流程跑得通
+inherit: smoke_wide.yaml
+
+nn:
+  seeds: [42, 43, 44]
+  epochs: 3
+
+output_dir: reports/smoke/mlp_seeds
