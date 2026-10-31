@@ -1,0 +1,9 @@
+# temporal_wide 的特徵，LightGBM 學習率 0.05 → 0.02（輪數上限與 early stopping 跟著放寬）
+inherit: temporal_wide.yaml
+
+lgb:
+  learning_rate: 0.02
+  num_boost_round: 5000
+  early_stopping_rounds: 200
+
+output_dir: reports/lgb_lr002
