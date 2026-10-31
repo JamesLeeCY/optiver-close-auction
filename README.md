@@ -43,12 +43,18 @@ fold 2: [train ........................]  gap  [val]
 | MLP | 6.1578（−2.26%） | 5.8317（−2.19%） | 68 分鐘（6 執行緒） |
 | Ensemble（nested 權重） | 6.1438（−2.48%） | 5.8164（−2.45%） | — |
 | Ensemble + 指數中性後處理 | **6.1404（−2.53%）** | **5.8138（−2.49%）** | — |
+| *擴充時序特徵 + LightGBM 學習率 0.02（`configs/lgb_lr002.yaml`，只跑 CV）* | | | |
+| LightGBM | 6.1493（−2.39%） | 未跑 | 111 分鐘（6 執行緒） |
+| Ensemble（nested 權重，搭配上面的 MLP） | 6.1428（−2.50%） | 未跑 | — |
+| Ensemble + 指數中性後處理 | 6.1392（−2.55%） | 未跑 | — |
 
 括號內為相對預測 0 的改善。Holdout 為最後 48 天，模型以全部 CV 日期（扣掉 embargo）重新訓練，輪數與 epoch 數取 CV 的平均最佳值（原本特徵：LightGBM 557 輪、MLP 10 epoch；擴充後：566 輪、9 epoch）；ensemble 權重只在 OOF 上決定（原本 0.59 / 0.41，擴充後 0.56 / 0.44），未在 holdout 上調整。兩個資料期間的波動不同，絕對值不能直接比，看相對改善：CV 與 holdout 幾乎一致，代表沒有對驗證期過擬合。
 
 兩模型相關係數：原本特徵 OOF 0.893、holdout 0.879；擴充後 OOF 0.879、holdout 0.873（`reports/ensemble_report.json`、`reports/temporal_wide/ensemble_report.json`）。ensemble 在 5 折都優於兩個單一模型；簡單平均（各 0.5）的 CV MAE 與最佳權重幾乎相同（原本 6.1525、擴充後 6.1440）。
 
 **擴充時序特徵**：ablation 顯示 temporal 是最重要的特徵組，因此把做 lag / diff 的欄位從 6 個加到 13 個（spread、wap_mid_gap、imb_vs_book、liquidity 與各種價差）、lag 與移動平均延長到 12 格（2 分鐘）、報酬區間加入 12 與 24 格，並加上「相對當天第一格的變化」。LightGBM 與 MLP 的 CV 在 5 折都變好，ensemble + 後處理在 CV 改善 0.0090、holdout 改善 0.0072。新特徵中 `imb_ratio_signed_since_open`、`idx_wap_ret_24`、`idx_wap_ret_12` 都進入 LightGBM 重要度前 15 名。
+
+**LightGBM 學習率 0.02**：特徵與 MLP 都和擴充時序特徵相同，只把 LightGBM 學習率從 0.05 降到 0.02（輪數上限 5000、early stopping 200）。5 折 CV 全部變好（−0.0019 到 −0.0044），LightGBM 6.15251 → 6.14934；但 ensemble + 後處理只從 6.14043 改善到 6.13917（0.0013），訓練時間卻是 3 倍（平均最佳輪數 1840，原本約 566）。ensemble 權重 0.60 / 0.40，兩模型 OOF 相關係數 0.888。**只有 CV、沒有跑 holdout**：holdout 已用過兩次，這個改善幅度不足以值得第三次動用，因此頂端摘要與結果圖仍以學習率 0.05 的版本為準（`reports/lgb_lr002/`）。
 
 **Holdout 使用了兩次**：第一次評估原本特徵，第二次評估擴充時序特徵。新特徵是依 CV 結果決定的，沒有看過 holdout，所以第二次的分數仍大致公正；但之後若再依 holdout 分數挑選做法，它就不再是乾淨的評估集。
 
@@ -130,7 +136,7 @@ python -m src.train_lgb --config configs/smoke.yaml
 ## Repo 結構
 
 ```
-configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
+configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、lgb_lr002.yaml（學習率 0.02，只跑 CV）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
 src/       data · cv · features · index_weights · pipeline · train_lgb · train_nn · ensemble · analyze
 scripts/   download_data.sh、make_synthetic.py、plot_results.py
 tests/     CV 切分、洩漏、指數權重估計
