@@ -3,7 +3,9 @@
 > **一句話摘要**：以 purged walk-forward CV 訓練 LightGBM + MLP ensemble，預測個股 WAP 未來 60 秒相對合成指數的變動（bps）。
 > CV MAE **6.1404** · Holdout MAE **5.8138**（各比預測 0 低 2.53% / 2.49%，擴充時序特徵 + 指數中性後處理）。
 
-<!-- 前 30 秒要讓面試官看到結果表與一張圖：完成後把 reports/ 的圖放這裡 -->
+![每一步的改善](reports/results.png)
+
+每一步都疊在前一步之上，數字是 MAE 相對「預測 0」的改善；CV 與 holdout 的改善幅度一致（`python scripts/plot_results.py`）。
 
 ## 1. 問題背景
 
@@ -76,9 +78,14 @@ SHAP（原本特徵、最後一折的模型、驗證集抽 2 萬筆）依組加�
 
 ## 5. 沒用的嘗試
 
-1. [待填：做了什麼、結果、你認為失敗的原因]
-2. [待填]
-3. [待填]
+<!-- 草稿：數字都是實驗結果，「原因」是推測，可改寫成自己的話 -->
+
+以下都以擴充時序特徵的 LightGBM（CV 6.15251）為基準，只看 CV、不再動用 holdout。
+
+1. **前一天已揭露的 target**（`configs/revealed.yaml`）：比賽 API 每天開盤前會公布前一天的 target，加入同股同秒的前一天 target、前一天平均與平均絕對值。CV 只改善 0.0011，5 折從 −0.0025 到 +0.0003 不一致，在折間雜訊範圍內，沒有採用。這三個特徵在重要度排第 13–23 名，模型確實會用，但它們提供的「這檔股票最近多會動」已經由個股波動度（stock 組）與當天的時序特徵涵蓋；60 秒超額報酬跨日的自我相關很弱，前一天同一秒的值幾乎沒有方向資訊。
+2. **時序特徵的橫截面版本**（`configs/xs_temporal.yaml`）：把 6 格與 24 格報酬、失衡變化、相對開盤變化等，再做同時點的排名與去平均。CV 只改善 0.0004，等於沒有差別。其中 `wap_since_open_xs_demean` 等排進重要度前 15 名，但只是取代了原本的特徵：index 組的「個股報酬減指數報酬」已經是一種橫截面相對值。這和 ablation 中 cross_sectional 組拿掉幾乎沒影響（+0.0002）是同一件事——**重要度高不等於有增量貢獻**。
+3. **最佳化 ensemble 權重**：在 OOF 上用 SLSQP 找最小 MAE 的權重，CV 6.1522，簡單平均 6.1525，差距可忽略。兩個模型實力相近、相關係數 0.88–0.89，最佳權重本來就接近一半一半；真正有用的是降低兩模型的相關性（擴充時序特徵後 ensemble 的改善比單一模型大）。
+4. **改良指數權重估計**：原方法只用所有股票都有資料的時點，資料少時會無法估計；改成用全部時點後，在全量資料上新舊權重的相關係數 0.99997，重建指數的誤差都是 0.061 bps，分數沒有變化。這個修正提升的是小資料試跑時的穩健性，不是準確度。
 
 ## 6. 限制與下一步
 
@@ -108,6 +115,7 @@ python -m src.train_lgb --config configs/base.yaml --holdout   # 只跑一次
 python -m src.train_lgb --config configs/temporal_wide.yaml
 python -m src.train_nn  --config configs/temporal_wide.yaml
 python -m src.ensemble  --config configs/temporal_wide.yaml --models lgb,nn
+python scripts/plot_results.py                                   # README 頂端的結果圖
 ```
 
 沒有資料時可先用合成資料跑通：
@@ -117,14 +125,14 @@ python scripts/make_synthetic.py --stocks 20 --days 60
 python -m src.train_lgb --config configs/smoke.yaml
 ```
 
-開發時在 `configs/base.yaml` 設 `data.max_dates` / `max_stocks` 縮小資料。預計執行時間：[待填]。
+開發時在 `configs/base.yaml` 設 `data.max_dates` / `max_stocks` 縮小資料。預計執行時間（12 執行緒的桌機只用 6 個、全量資料）：第一次建特徵 5–10 分鐘（之後讀快取）；LightGBM 5 折 CV 約 30–40 分鐘、MLP 約 65–70 分鐘；holdout 重訓 LightGBM 約 15 分鐘、MLP 約 20 分鐘。記憶體峰值約 27 GB（MLP 前處理）。
 
 ## Repo 結構
 
 ```
-configs/   base.yaml（正式）、smoke.yaml（合成資料）
+configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
 src/       data · cv · features · index_weights · pipeline · train_lgb · train_nn · ensemble · analyze
-scripts/   download_data.sh、make_synthetic.py
+scripts/   download_data.sh、make_synthetic.py、plot_results.py
 tests/     CV 切分、洩漏、指數權重估計
-reports/   CV log、OOF、ablation、SHAP
+reports/   CV log、OOF、ablation、SHAP、結果圖；各實驗設定的結果在同名子資料夾
 ```
