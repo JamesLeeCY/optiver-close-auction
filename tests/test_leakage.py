@@ -83,3 +83,27 @@ def test_wide_temporal_features_do_not_use_future_seconds(synth):
     b = build_features(_perturb(df, future), fcfg, w)
     assert any(c.endswith("_since_open") for c in a.columns)
     _assert_same(a, b, ~future)
+
+
+def test_revealed_target_uses_only_previous_day(synth):
+    """revealed 組只能用前一天的 target：改當天或更早以前的 target，當天的特徵不變。"""
+    from pathlib import Path
+
+    from src.config import load_config
+    from src.features import add_revealed_target
+
+    df, _ = synth
+    day = 5
+    a = add_revealed_target(df)
+    rng = np.random.default_rng(0)
+    for changed in (df["date_id"] == day, df["date_id"] < day - 1, df["date_id"] > day):
+        b = add_revealed_target(df.assign(target=df["target"].where(~changed, rng.normal(0, 100, len(df)))))
+        cols = [c for c in a.columns if c.startswith("tgt_prev_day")]
+        m = (df["date_id"] == day).to_numpy()
+        pd.testing.assert_frame_equal(a.loc[m, cols], b.loc[m, cols])
+    # 前一天的 target 確實被用上
+    prev = df[df["date_id"] == day - 1].set_index(["stock_id", "seconds_in_bucket"])["target"]
+    cur = a[a["date_id"] == day].set_index(["stock_id", "seconds_in_bucket"])["tgt_prev_day"]
+    assert np.allclose(cur, prev.reindex(cur.index).astype(np.float32), equal_nan=True)
+    cfg = load_config(Path(__file__).parents[1] / "configs" / "revealed.yaml")["features"]
+    assert "revealed" in cfg["groups"]

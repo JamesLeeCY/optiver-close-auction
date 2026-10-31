@@ -1,0 +1,17 @@
+# smoke 版的 revealed：合成資料快速跑通
+inherit: revealed.yaml
+
+data:
+  train_path: data/synthetic_train.csv
+
+cv:
+  n_folds: 3
+  embargo_days: 2
+
+lgb:
+  num_leaves: 31
+  min_child_samples: 50
+  num_boost_round: 300
+  early_stopping_rounds: 30
+
+output_dir: reports/smoke/revealed

@@ -1,0 +1,10 @@
+# temporal_wide + 時序特徵的橫截面版本：這檔的變化在同一時點排第幾、比平均高多少
+inherit: temporal_wide.yaml
+
+features:
+  cross_sectional:
+    cols: [imb_ratio_signed, book_imb, ref_wap_gap, spread, size_imb, wap_ret_1,
+           wap_ret_6, wap_ret_24, imb_ratio_signed_diff6, book_imb_diff6, ref_wap_gap_diff6,
+           imb_ratio_signed_since_open, wap_since_open]
+
+output_dir: reports/xs_temporal

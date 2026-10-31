@@ -4,6 +4,8 @@
 - 時間特徵只用同一 (stock_id, date_id) 內 seconds_in_bucket 更早（含當下）的資料
 - 橫截面特徵只用同一 (date_id, seconds_in_bucket) 的資料，不用整天統計量
 - 個股統計量（StockStats）只從訓練折 fit
+- 例外：revealed 組用「前一天」的 target。比賽 API 每天開盤前會公布前一天的 target，所以實盤可用；
+  當天與更早以前的 target 都不用
 
 輸入需依 (date_id, seconds_in_bucket, stock_id) 排序，groupby 後的 shift 才是「上一格」。
 """
@@ -138,6 +140,24 @@ def add_index_relative(df: pd.DataFrame, weights: pd.Series | None) -> pd.DataFr
     return df.drop(columns="_w")
 
 
+# ---------- 已揭露的 target：前一天同一檔股票的實際結果（實盤每天開盤前公布） ----------
+def add_revealed_target(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    keys = ["stock_id", "date_id", "seconds_in_bucket"]
+    t = df[keys + ["target"]].dropna(subset=["target"])
+    # 把第 d 天的 target 放到第 d+1 天的同一秒
+    prev = pd.Series(t["target"].to_numpy(),
+                     index=pd.MultiIndex.from_arrays([t["stock_id"], t["date_id"] + 1, t["seconds_in_bucket"]]))
+    df["tgt_prev_day"] = _f32(prev.reindex(pd.MultiIndex.from_frame(df[keys])).to_numpy())
+    day = t.assign(abs_t=t["target"].abs()).groupby(["stock_id", "date_id"]).agg(
+        tgt_prev_day_mean=("target", "mean"), tgt_prev_day_absmean=("abs_t", "mean"))
+    day.index = pd.MultiIndex.from_arrays([day.index.get_level_values(0), day.index.get_level_values(1) + 1])
+    idx = pd.MultiIndex.from_frame(df[["stock_id", "date_id"]])
+    for c in day.columns:
+        df[c] = _f32(day[c].reindex(idx).to_numpy())
+    return df
+
+
 # ---------- 個股層級：不同股票的雜訊尺度不同（只從訓練折 fit） ----------
 class StockStats:
     COLS = ["stock_tgt_std", "stock_tgt_mad", "stock_imb_med", "stock_spread_med"]
@@ -177,6 +197,8 @@ def build_features(df: pd.DataFrame, fcfg: dict, index_weights: pd.Series | None
         df = add_cross_sectional(df, fcfg.get("cross_sectional", {}).get("cols", []))
     if "index" in groups:
         df = add_index_relative(df, index_weights)
+    if "revealed" in groups:
+        df = add_revealed_target(df)
     return df
 
 
@@ -200,6 +222,7 @@ def feature_groups(cols: list[str]) -> dict[str, list[str]]:
         "cross_sectional": lambda c: "_xs_" in c,
         "index": lambda c: c.startswith(("idx_", "rel_")) or c.endswith("_idx") or c == "index_weight",
         "stock": lambda c: c in StockStats.COLS,
+        "revealed": lambda c: c.startswith("tgt_prev_day"),
     }
     out = {"raw": [c for c in cols if c in raw]}
     for name, rule in rules.items():

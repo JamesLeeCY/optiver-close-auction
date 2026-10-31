@@ -1,0 +1,7 @@
+# temporal_wide + 前一天已揭露的 target（同股同秒、前一天平均與平均絕對值）
+inherit: temporal_wide.yaml
+
+features:
+  groups: [basic, auction, time, temporal, cross_sectional, index, stock, revealed]
+
+output_dir: reports/revealed

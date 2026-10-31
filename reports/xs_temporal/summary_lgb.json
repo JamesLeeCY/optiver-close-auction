@@ -1,0 +1,7 @@
+{
+  "cv_mae": 6.152107238769531,
+  "cv_mae_zero": 6.3000769168444934,
+  "mean_best_iter": 495,
+  "n_features": 261,
+  "drop_groups": []
+}
