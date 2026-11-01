@@ -1,0 +1,19 @@
+# GRU 序列模型：沿用 temporal_wide 的特徵快取，但預設拿掉 temporal 組，時間變化交給 GRU 學
+inherit: temporal_wide.yaml
+
+gru:
+  drop_groups: [temporal]
+  hidden: 128
+  layers: 2
+  dropout: 0.1
+  stock_emb_dim: 8
+  lr: 0.001
+  weight_decay: 0.00001
+  batch_size: 256        # 以序列（一檔股票一天）為單位
+  epochs: 20
+  patience: 3
+  scaler: quantile
+  seed: 42
+  num_threads: 6         # torch CPU 執行緒，只用一半
+
+output_dir: reports/gru

@@ -1,0 +1,8 @@
+{
+  "cv_mae": 6.171256065368652,
+  "mean_best_epoch": 6,
+  "seeds": [
+    42
+  ],
+  "n_features": 54
+}

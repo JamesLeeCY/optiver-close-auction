@@ -1,0 +1,19 @@
+# smoke 版 gru：合成資料、折數少，只確認流程跑得通
+inherit: smoke_wide.yaml
+
+gru:
+  drop_groups: [temporal]
+  hidden: 32
+  layers: 2
+  dropout: 0.1
+  stock_emb_dim: 4
+  lr: 0.001
+  weight_decay: 0.00001
+  batch_size: 64
+  epochs: 3
+  patience: 2
+  scaler: quantile
+  seed: 42
+  num_threads: 6
+
+output_dir: reports/smoke/gru
