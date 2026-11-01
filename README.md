@@ -47,6 +47,14 @@ fold 2: [train ........................]  gap  [val]
 | LightGBM | 6.1493（−2.39%） | 未跑 | 111 分鐘（6 執行緒） |
 | Ensemble（nested 權重，搭配上面的 MLP） | 6.1428（−2.50%） | 未跑 | — |
 | Ensemble + 指數中性後處理 | 6.1392（−2.55%） | 未跑 | — |
+| *再加 MLP 多種子平均（`configs/mlp_seeds.yaml`，只跑 CV）* | | | |
+| MLP（種子 42 / 43 / 44 平均） | 6.1501（−2.38%） | 未跑 | 137 分鐘（6 執行緒） |
+| Ensemble（LightGBM lr 0.02 + 3 種子 MLP） | 6.1414（−2.52%） | 未跑 | — |
+| Ensemble + 指數中性後處理 | 6.1380（−2.57%） | 未跑 | — |
+| *再加 GRU 序列模型（`configs/gru.yaml`，只跑 CV）* | | | |
+| GRU | 6.1713（−2.04%） | 未跑 | 79 分鐘（6 執行緒） |
+| Ensemble（LightGBM + MLP + GRU） | 6.1402（−2.54%） | 未跑 | — |
+| Ensemble + 指數中性後處理 | **6.1371（−2.59%）** | 未跑 | — |
 
 括號內為相對預測 0 的改善。Holdout 為最後 48 天，模型以全部 CV 日期（扣掉 embargo）重新訓練，輪數與 epoch 數取 CV 的平均最佳值（原本特徵：LightGBM 557 輪、MLP 10 epoch；擴充後：566 輪、9 epoch）；ensemble 權重只在 OOF 上決定（原本 0.59 / 0.41，擴充後 0.56 / 0.44），未在 holdout 上調整。兩個資料期間的波動不同，絕對值不能直接比，看相對改善：CV 與 holdout 幾乎一致，代表沒有對驗證期過擬合。
 
@@ -55,6 +63,12 @@ fold 2: [train ........................]  gap  [val]
 **擴充時序特徵**：ablation 顯示 temporal 是最重要的特徵組，因此把做 lag / diff 的欄位從 6 個加到 13 個（spread、wap_mid_gap、imb_vs_book、liquidity 與各種價差）、lag 與移動平均延長到 12 格（2 分鐘）、報酬區間加入 12 與 24 格，並加上「相對當天第一格的變化」。LightGBM 與 MLP 的 CV 在 5 折都變好，ensemble + 後處理在 CV 改善 0.0090、holdout 改善 0.0072。新特徵中 `imb_ratio_signed_since_open`、`idx_wap_ret_24`、`idx_wap_ret_12` 都進入 LightGBM 重要度前 15 名。
 
 **LightGBM 學習率 0.02**：特徵與 MLP 都和擴充時序特徵相同，只把 LightGBM 學習率從 0.05 降到 0.02（輪數上限 5000、early stopping 200）。5 折 CV 全部變好（−0.0019 到 −0.0044），LightGBM 6.15251 → 6.14934；但 ensemble + 後處理只從 6.14043 改善到 6.13917（0.0013），訓練時間卻是 3 倍（平均最佳輪數 1840，原本約 566）。ensemble 權重 0.60 / 0.40，兩模型 OOF 相關係數 0.888。**只有 CV、沒有跑 holdout**：holdout 已用過兩次，這個改善幅度不足以值得第三次動用，因此頂端摘要與結果圖仍以學習率 0.05 的版本為準（`reports/lgb_lr002/`）。
+
+**MLP 多種子平均**：同一折用種子 42、43、44 各訓練一個 MLP（前處理共用），預測取平均。單一種子的 CV 在 6.1573–6.1581 之間，平均後 6.1501，5 折都改善 0.0065–0.0099；種子 42 與原本的單一種子結果完全相同，可重現。但併進 ensemble 只從 6.1392 改善到 6.1380（0.0012）：單一 MLP 的隨機誤差本來就有一大部分在和 LightGBM 平均時抵銷，平均後的 MLP 與 LightGBM 相關係數從 0.888 升到 0.908，最佳權重變成各 0.5。**只有 CV、沒有跑 holdout**（`reports/mlp_seeds/`）。
+
+**GRU 序列模型**：同一檔股票當天的 55 個時點當成一條序列，用單向 GRU（2 層、hidden 128）逐格預測；第 t 格的輸出只看得到第 0..t 格，`tests/test_gru.py` 竄改後面的時點、確認前面的預測不變。刻意拿掉 temporal 特徵組（只剩 59 個特徵），時間上的變化交給 GRU 自己學。單獨看最弱（CV 6.1713，每折都比 MLP 差 0.018–0.026，第 6–7 個 epoch 後開始過擬合），但與 LightGBM / MLP 的相關係數只有 0.859 / 0.869，是三者中差異最大的，ensemble 權重 0.16（LightGBM 0.44、MLP 0.39）。加入後 ensemble + 後處理從 6.1380 到 6.1371（0.0009），5 折都小幅改善。**只有 CV、沒有跑 holdout**（`reports/gru/`）；GRU 目前只有一個種子、沒調參，還有改善空間。
+
+這三個只看 CV 的實驗（學習率 0.02、多種子、GRU）各自只帶來約 0.001 的改善，加起來 CV 從 6.1404 到 6.1371。頂端摘要與結果圖仍以有 holdout 驗證的版本為準。
 
 **Holdout 使用了兩次**：第一次評估原本特徵，第二次評估擴充時序特徵。新特徵是依 CV 結果決定的，沒有看過 holdout，所以第二次的分數仍大致公正；但之後若再依 holdout 分數挑選做法，它就不再是乾淨的評估集。
 
@@ -122,6 +136,13 @@ python -m src.train_lgb --config configs/temporal_wide.yaml
 python -m src.train_nn  --config configs/temporal_wide.yaml
 python -m src.ensemble  --config configs/temporal_wide.yaml --models lgb,nn
 python scripts/plot_results.py                                   # README 頂端的結果圖
+
+# 只跑 CV 的延伸實驗（結果分別寫到 reports/lgb_lr002、mlp_seeds、gru）
+python -m src.train_lgb --config configs/lgb_lr002.yaml
+python -m src.train_nn  --config configs/mlp_seeds.yaml
+python -m src.train_gru --config configs/gru.yaml
+# 三模型 ensemble：把另外兩個模型的 oof_*.parquet 複製到 reports/gru/ 後
+python -m src.ensemble  --config configs/gru.yaml --models lgb,nn,gru
 ```
 
 沒有資料時可先用合成資料跑通：
@@ -136,9 +157,9 @@ python -m src.train_lgb --config configs/smoke.yaml
 ## Repo 結構
 
 ```
-configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、lgb_lr002.yaml（學習率 0.02，只跑 CV）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
-src/       data · cv · features · index_weights · pipeline · train_lgb · train_nn · ensemble · analyze
+configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、lgb_lr002 / mlp_seeds / gru.yaml（只跑 CV 的延伸實驗）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
+src/       data · cv · features · index_weights · pipeline · train_lgb · train_nn · train_gru · ensemble · analyze
 scripts/   download_data.sh、make_synthetic.py、plot_results.py
-tests/     CV 切分、洩漏、指數權重估計
+tests/     CV 切分、洩漏、指數權重估計、GRU 序列與因果性
 reports/   CV log、OOF、ablation、SHAP、結果圖；各實驗設定的結果在同名子資料夾
 ```
