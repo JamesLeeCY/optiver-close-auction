@@ -1,0 +1,8 @@
+# smoke 版 lgb_refit：合成資料、折數少，只確認流程跑得通
+inherit: smoke_wide.yaml
+
+refit:
+  every_days: 3
+  gap_days: 0
+
+output_dir: reports/smoke/lgb_refit
