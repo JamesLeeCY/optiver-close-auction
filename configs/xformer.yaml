@@ -1,0 +1,22 @@
+# 跨股票 Transformer：同一時點的所有股票互相 attention。沒有時間維度，所以保留全部 temporal_wide 特徵
+inherit: temporal_wide.yaml
+
+xformer:
+  drop_groups: []
+  d_model: 64
+  heads: 4
+  layers: 2
+  ff: 128
+  dropout: 0.1
+  stock_emb_dim: 8
+  lr: 0.001
+  weight_decay: 0.00001
+  batch_size: 32         # 以時點為單位，一個時點約 200 檔股票
+  eval_batch_size: 64
+  epochs: 20
+  patience: 3
+  scaler: quantile
+  seed: 42
+  num_threads: 6         # torch CPU 執行緒，只用一半
+
+output_dir: reports/xformer

@@ -1,0 +1,22 @@
+# smoke 版 xformer：合成資料、折數少，只確認流程跑得通
+inherit: smoke_wide.yaml
+
+xformer:
+  drop_groups: []
+  d_model: 16
+  heads: 2
+  layers: 2
+  ff: 32
+  dropout: 0.1
+  stock_emb_dim: 4
+  lr: 0.001
+  weight_decay: 0.00001
+  batch_size: 8
+  eval_batch_size: 64
+  epochs: 3
+  patience: 2
+  scaler: quantile
+  seed: 42
+  num_threads: 6
+
+output_dir: reports/smoke/xformer

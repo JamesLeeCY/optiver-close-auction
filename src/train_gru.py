@@ -95,22 +95,24 @@ def train_fold(tr, va, feats, gcfg, n_stocks, n_steps, epochs=None, verbose=True
     return pred, None if fixed else mae(yva, pred), best_epochs, preds
 
 
-def _fit_seed(str_: Sequences, sva: Sequences, yva, gcfg, n_stocks, seed, epochs=None, verbose=True):
+def _fit_seed(str_, sva, yva, gcfg, n_stocks, seed, epochs=None, verbose=True, build=None):
+    """str_ / sva 只需有 x、y、mask、stock 與 to_rows（Sequences 或 train_xformer.Groups）。
+    build(n_num) 回傳模型；None 時用 GRUNet。"""
     torch.manual_seed(seed)
     fixed = epochs is not None
     Xtr, Ytr = torch.from_numpy(str_.x), torch.from_numpy(str_.y)
     Mtr, Str = torch.from_numpy(str_.mask), torch.from_numpy(str_.stock)
     Xva, Sva = torch.from_numpy(sva.x), torch.from_numpy(sva.stock)
-    model = GRUNet(Xtr.shape[2], n_stocks, gcfg["stock_emb_dim"], gcfg["hidden"],
-                   gcfg["layers"], gcfg["dropout"])
+    model = build(Xtr.shape[2]) if build else GRUNet(Xtr.shape[2], n_stocks, gcfg["stock_emb_dim"],
+                                                     gcfg["hidden"], gcfg["layers"], gcfg["dropout"])
     opt = torch.optim.AdamW(model.parameters(), lr=gcfg["lr"], weight_decay=gcfg["weight_decay"])
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=1)
-    bs = gcfg["batch_size"]
+    bs, ebs = gcfg["batch_size"], gcfg.get("eval_batch_size", 2048)
 
     def predict():
         model.eval()
         with torch.no_grad():
-            p = torch.cat([model(Xva[i:i + 2048], Sva[i:i + 2048]) for i in range(0, len(Xva), 2048)])
+            p = torch.cat([model(Xva[i:i + ebs], Sva[i:i + ebs]) for i in range(0, len(Xva), ebs)])
         return sva.to_rows(p.numpy())
 
     best, best_state, best_epoch, bad = np.inf, None, 0, 0
@@ -152,36 +154,37 @@ def _fit_seed(str_: Sequences, sva: Sequences, yva, gcfg, n_stocks, seed, epochs
     return predict(), best_epoch
 
 
-def run_holdout(p, cfg, n_stocks, n_steps, epochs: int, out: Path) -> float:
+def run_holdout(p, cfg, n_stocks, n_steps, epochs: int, out: Path, name: str = "gru", fit=train_fold) -> float:
     log = out / "holdout_log.csv"
-    if log.exists() and (pd.read_csv(log)["model"] == "gru").any():
-        print(f"警告：gru 的 holdout 已經用過（見 {log}）。重複使用會讓它失去意義。")
+    if log.exists() and (pd.read_csv(log)["model"] == name).any():
+        print(f"警告：{name} 的 holdout 已經用過（見 {log}）。重複使用會讓它失去意義。")
     # 與 train_nn.run_holdout 相同：全部 CV 日期去掉最後 embargo 天
     cv_dates = np.sort(np.concatenate([p.folds[-1].train_dates, p.folds[-1].val_dates]))
     emb = cfg["cv"]["embargo_days"]
     train_dates = cv_dates[:-emb] if emb else cv_dates
     tr, ho, feats = fold_frames(p, train_dates, p.holdout_dates, "stock" in cfg["features"]["groups"])
     print(f"holdout: train {len(train_dates)} days, {epochs} epochs, holdout {len(p.holdout_dates)} days")
-    pred, _, _, _ = train_fold(tr, ho, feats, cfg["gru"], n_stocks, n_steps, epochs=epochs)
+    pred, _, _, _ = fit(tr, ho, feats, cfg[name], n_stocks, n_steps, epochs=epochs)
     ho[["stock_id", "date_id", "seconds_in_bucket", "target"]].assign(
-        pred=pred.astype(np.float32)).to_parquet(out / "holdout_pred_gru.parquet")
+        pred=pred.astype(np.float32)).to_parquet(out / f"holdout_pred_{name}.parquet")
     score = mae(ho["target"], pred)
-    entry = pd.DataFrame([{"time": datetime.now().isoformat(timespec="seconds"), "model": "gru",
+    entry = pd.DataFrame([{"time": datetime.now().isoformat(timespec="seconds"), "model": name,
                            "n_rounds": epochs, "holdout_mae": score,
                            "holdout_mae_zero": mae(ho["target"], 0.0)}])
     entry.to_csv(log, mode="a", header=not log.exists(), index=False)
     return score
 
 
-def main():
+def cli(name: str = "gru", fit=train_fold):
+    """GRU 與 train_xformer 共用的進入點：name 是設定檔的段落名，也是預設輸出檔名。"""
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="configs/gru.yaml")
-    ap.add_argument("--tag", default="gru")
+    ap.add_argument("--config", default=f"configs/{name}.yaml")
+    ap.add_argument("--tag", default=name)
     ap.add_argument("--holdout-epochs", type=int, default=None,
                     help="跳過 CV，直接以此 epoch 數訓練並評估 holdout")
     args = ap.parse_args()
     cfg = load_config(args.config)
-    gcfg = cfg["gru"]
+    gcfg = cfg[name]
     if gcfg.get("num_threads"):
         torch.set_num_threads(gcfg["num_threads"])
     out = Path(cfg["output_dir"])
@@ -191,7 +194,7 @@ def main():
     n_stocks = int(p.df["stock_id"].max()) + 1
     n_steps = int(p.df["seconds_in_bucket"].max()) // STEP + 1
     if args.holdout_epochs:
-        score = run_holdout(p, cfg, n_stocks, n_steps, args.holdout_epochs, out)
+        score = run_holdout(p, cfg, n_stocks, n_steps, args.holdout_epochs, out, name, fit)
         print(f"Holdout MAE {score:.5f}")
         return
     use_ss = "stock" in cfg["features"]["groups"]
@@ -200,7 +203,7 @@ def main():
         t0 = time.time()
         tr, va, feats = fold_frames(p, f.train_dates, f.val_dates, use_ss)
         print(f"fold {f.fold}")
-        pred, score, epochs, by_seed = train_fold(tr, va, feats, gcfg, n_stocks, n_steps)
+        pred, score, epochs, by_seed = fit(tr, va, feats, gcfg, n_stocks, n_steps)
         y = va["target"].to_numpy()
         rows.append({"fold": f.fold, "mae": score, "best_epoch": float(np.mean(epochs)),
                      **{f"mae_s{s}": mae(y, q) for s, q in by_seed.items()},
@@ -216,6 +219,10 @@ def main():
     summary = {"cv_mae": cv, "mean_best_epoch": int(round(np.mean([r["best_epoch"] for r in rows]))),
                "seeds": seeds_of(gcfg), "n_features": len(gru_features(p.features, gcfg))}
     (out / f"summary_{args.tag}.json").write_text(json.dumps(summary, indent=2))
+
+
+def main():
+    cli("gru", train_fold)
 
 
 if __name__ == "__main__":
