@@ -3,7 +3,8 @@
     python -m src.train_lgb --config configs/base.yaml
     python -m src.train_lgb --config configs/base.yaml --drop-groups temporal,index --tag no_temporal
     python -m src.train_lgb --config configs/base.yaml --holdout     # 第 7 週才跑，且只跑一次
-    python -m src.train_lgb --config configs/base.yaml --holdout-rounds 557  # 跳過 CV，直接用指定輪數
+    python -m src.train_lgb --config configs/lgb_refit.yaml   # 設定 refit 時改跑定期重訓的 CV
+    python -m src.train_lgb --config configs/base.yaml --holdout-rounds 557  #跳過 CV，直接用指定輪數
 """
 from __future__ import annotations
 
@@ -73,6 +74,83 @@ def run_cv(p: Prepared, cfg: dict, drop_groups: list[str] | None = None, verbose
     }
 
 
+def refit_schedule(train_dates: np.ndarray, val_dates: np.ndarray, every_days: int,
+                   gap_days: int = 0, embargo_dates: np.ndarray | None = None
+                   ) -> list[tuple[np.ndarray, np.ndarray]]:
+    """驗證期每 every_days 天切一段；每段的訓練資料 = 原訓練日期 + 這段開始前已揭露的日期。
+
+    比賽 API 每天開盤前公布前一天的 target，所以第 d 天可以用到 d-1 天（含）以前的資料；
+    gap_days > 0 時再往前多空幾天。第一段就是原本的訓練日期，與一般 CV 相同；
+    之後各段也加入 embargo 那幾天（訓練集與驗證集之間），上線時它們早已揭露。"""
+    emb = np.asarray([] if embargo_dates is None else embargo_dates, dtype=val_dates.dtype)
+    out = []
+    for s in range(0, len(val_dates), every_days):
+        start = val_dates[s]
+        known = np.concatenate([emb, val_dates[:s]])
+        seen = known[known < start - gap_days] if s else known[:0]
+        out.append((np.concatenate([train_dates, seen]), val_dates[s:s + every_days]))
+    return out
+
+
+def run_refit_cv(p: Prepared, cfg: dict, verbose: bool = True) -> dict:
+    """定期重訓的 CV：每折先照一般 CV 訓練（驗證集 early stopping，得到輪數 B），
+    第一段直接用這個模型；之後每段用已揭露的驗證日期加進訓練集、固定 B 輪重訓，只預測這一段。
+    同一個初始模型對整個驗證期的預測也存下來（pred_static），兩者只差在有沒有重訓。"""
+    params, n_rounds, es = _split_params(cfg["lgb"])
+    rcfg = cfg["refit"]
+    use_ss = "stock" in cfg["features"]["groups"]
+    cv_dates = np.setdiff1d(np.unique(p.df["date_id"]), p.holdout_dates)
+    oof, rows = [], []
+    for f in p.folds:
+        t0 = time.time()
+        tr, va, feats = fold_frames(p, f.train_dates, f.val_dates, use_ss)
+        dtr = lgb.Dataset(tr[feats], tr["target"], free_raw_data=True)
+        dva = lgb.Dataset(va[feats], va["target"], reference=dtr, free_raw_data=True)
+        model = lgb.train(params, dtr, n_rounds, valid_sets=[dva],
+                          callbacks=[lgb.early_stopping(es, verbose=False)])
+        best = model.best_iteration
+        keep = va[["stock_id", "date_id", "seconds_in_bucket", "target"]].assign(
+            pred_static=model.predict(va[feats], num_iteration=best).astype(np.float32), fold=f.fold)
+        del tr, dtr, dva
+        keep["pred"] = np.nan
+        emb = cv_dates[(cv_dates > f.train_dates[-1]) & (cv_dates < f.val_dates[0])]
+        sched = refit_schedule(f.train_dates, f.val_dates, rcfg["every_days"], rcfg.get("gap_days", 0), emb)
+        for k, (fit_dates, pred_dates) in enumerate(sched):
+            m = keep["date_id"].isin(pred_dates).to_numpy()
+            if k == 0:
+                keep.loc[m, "pred"] = keep.loc[m, "pred_static"]
+                continue
+            t1 = time.time()
+            # 每段重算 stock 統計量，只用這段之前的資料
+            tr_k, va_k, feats_k = fold_frames(p, fit_dates, pred_dates, use_ss)
+            mk = lgb.train(params, lgb.Dataset(tr_k[feats_k], tr_k["target"]), best)
+            # 兩邊都是從 p.df 依原順序篩出來的（stock 統計量的 merge 會重設 index），逐列對齊
+            key = ["stock_id", "date_id", "seconds_in_bucket"]
+            assert (va_k[key].to_numpy() == keep.loc[m, key].to_numpy()).all()
+            keep.loc[m, "pred"] = mk.predict(va_k[feats_k]).astype(np.float32)
+            if verbose:
+                print(f"  refit {k}: +{len(fit_dates) - len(f.train_dates)} days, "
+                      f"predict {pred_dates[0]}-{pred_dates[-1]} [{time.time() - t1:.0f}s]")
+            del tr_k, va_k
+        y = keep["target"]
+        rows.append({"fold": f.fold, "best_iter": best, "n_refits": len(sched) - 1,
+                     "mae_static": mae(y, keep["pred_static"]), "mae": mae(y, keep["pred"]),
+                     "mae_zero": mae(y, 0.0), "seconds": round(time.time() - t0, 1)})
+        if verbose:
+            r = rows[-1]
+            print(f"fold {f.fold}: MAE refit {r['mae']:.5f} vs static {r['mae_static']:.5f} "
+                  f"({r['mae'] - r['mae_static']:+.5f}) iter {best} [{r['seconds']}s]")
+        oof.append(keep)
+    folds = pd.DataFrame(rows)
+    oof = pd.concat(oof, ignore_index=True)
+    return {"folds": folds, "oof": oof,
+            "cv_mae": mae(oof["target"], oof["pred"]),
+            "cv_mae_static": mae(oof["target"], oof["pred_static"]),
+            "cv_mae_zero": mae(oof["target"], 0.0),
+            "mean_best_iter": int(folds["best_iter"].mean()),
+            "refit": rcfg}
+
+
 def run_holdout(p: Prepared, cfg: dict, n_rounds: int, drop_groups, out: Path) -> float:
     log = out / "holdout_log.csv"
     if log.exists() and (pd.read_csv(log)["model"] == "lgb").any():
@@ -118,6 +196,16 @@ def main():
     if args.holdout_rounds:
         score = run_holdout(p, cfg, args.holdout_rounds, drop, out)
         print(f"Holdout MAE {score:.5f}")
+        return
+    if cfg.get("refit"):
+        res = run_refit_cv(p, cfg)
+        print(f"CV MAE refit {res['cv_mae']:.5f} | static {res['cv_mae_static']:.5f} "
+              f"| predict-0 {res['cv_mae_zero']:.5f}")
+        res["folds"].to_csv(out / f"cv_{args.tag}.csv", index=False)
+        res["oof"].to_parquet(out / f"oof_{args.tag}.parquet")
+        (out / f"summary_{args.tag}.json").write_text(json.dumps(
+            {k: res[k] for k in ("cv_mae", "cv_mae_static", "cv_mae_zero", "mean_best_iter", "refit")},
+            indent=2))
         return
     res = run_cv(p, cfg, drop)
     print(f"CV MAE {res['cv_mae']:.5f} | predict-0 {res['cv_mae_zero']:.5f}")

@@ -1,0 +1,8 @@
+# temporal_wide 的 LightGBM（學習率 0.05），驗證期每 15 天用已揭露的 target 重訓一次
+inherit: temporal_wide.yaml
+
+refit:
+  every_days: 15
+  gap_days: 0            # 第 d 天可用到 d-1 天的 target（比賽 API 每天公布前一天的 target）
+
+output_dir: reports/lgb_refit
