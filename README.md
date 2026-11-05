@@ -54,7 +54,15 @@ fold 2: [train ........................]  gap  [val]
 | *再加 GRU 序列模型（`configs/gru.yaml`，只跑 CV）* | | | |
 | GRU | 6.1713（−2.04%） | 未跑 | 79 分鐘（6 執行緒） |
 | Ensemble（LightGBM + MLP + GRU） | 6.1402（−2.54%） | 未跑 | — |
-| Ensemble + 指數中性後處理 | **6.1371（−2.59%）** | 未跑 | — |
+| Ensemble + 指數中性後處理 | 6.1371（−2.59%） | 未跑 | — |
+| *LightGBM 改為每 15 天定期重訓（`configs/lgb_refit.yaml`，學習率 0.05，只跑 CV）* | | | |
+| LightGBM（每 15 天重訓） | 6.1476（−2.42%） | 未跑 | 138 分鐘（6 執行緒） |
+| Ensemble（重訓 LightGBM + 3 種子 MLP + GRU） | 6.1387（−2.56%） | 未跑 | — |
+| Ensemble + 指數中性後處理 | 6.1358（−2.61%） | 未跑 | — |
+| *再加跨股票 Transformer（`configs/xformer.yaml`，只跑 CV）* | | | |
+| Transformer | 6.1584（−2.25%） | 未跑 | 107 分鐘（6 執行緒） |
+| Ensemble（重訓 LightGBM + MLP + GRU + Transformer） | 6.1369（−2.59%） | 未跑 | — |
+| Ensemble + 指數中性後處理 | **6.1348（−2.62%）** | 未跑 | — |
 
 括號內為相對預測 0 的改善。Holdout 為最後 48 天，模型以全部 CV 日期（扣掉 embargo）重新訓練，輪數與 epoch 數取 CV 的平均最佳值（原本特徵：LightGBM 557 輪、MLP 10 epoch；擴充後：566 輪、9 epoch）；ensemble 權重只在 OOF 上決定（原本 0.59 / 0.41，擴充後 0.56 / 0.44），未在 holdout 上調整。兩個資料期間的波動不同，絕對值不能直接比，看相對改善：CV 與 holdout 幾乎一致，代表沒有對驗證期過擬合。
 
@@ -68,7 +76,11 @@ fold 2: [train ........................]  gap  [val]
 
 **GRU 序列模型**：同一檔股票當天的 55 個時點當成一條序列，用單向 GRU（2 層、hidden 128）逐格預測；第 t 格的輸出只看得到第 0..t 格，`tests/test_gru.py` 竄改後面的時點、確認前面的預測不變。刻意拿掉 temporal 特徵組（只剩 59 個特徵），時間上的變化交給 GRU 自己學。單獨看最弱（CV 6.1713，每折都比 MLP 差 0.018–0.026，第 6–7 個 epoch 後開始過擬合），但與 LightGBM / MLP 的相關係數只有 0.859 / 0.869，是三者中差異最大的，ensemble 權重 0.16（LightGBM 0.44、MLP 0.39）。加入後 ensemble + 後處理從 6.1380 到 6.1371（0.0009），5 折都小幅改善。**只有 CV、沒有跑 holdout**（`reports/gru/`）；GRU 目前只有一個種子、沒調參，還有改善空間。
 
-這三個只看 CV 的實驗（學習率 0.02、多種子、GRU）各自只帶來約 0.001 的改善，加起來 CV 從 6.1404 到 6.1371。頂端摘要與結果圖仍以有 holdout 驗證的版本為準。
+**LightGBM 定期重訓**：比賽測試期每天會揭露前一天的 target，所以驗證期每 15 天用「原本的訓練日期 + 這段開始前已揭露的日期」（包含 embargo 那幾天與之前的驗證日）重訓一次 LightGBM，第一段直接用原本的模型。每次重訓的輪數固定為該折 early stopping 的最佳輪數，stock 統計特徵也用重訓資料重算；`tests/test_refit.py` 檢查每段只用到它開始之前的日期。5 折都變好（−0.0027 到 −0.0085，越後面的折原本訓練資料越多、改善越小），LightGBM 6.15251 → 6.14762（0.0049），是目前單一改動中最大的；學習率維持 0.05，比降到 0.02（6.14934）更好、也較快。三模型 ensemble 只把 LightGBM 換成重訓版（MLP、GRU 沒重訓），ensemble + 後處理從 6.1371 到 6.1358。注意固定輪數取自同一折驗證期的 early stopping，與其他實驗相同，略為樂觀。**只有 CV、沒有跑 holdout**（`reports/lgb_refit/`，OOF 內也存了不重訓的 `pred_static` 供比較）。
+
+**跨股票 Transformer**：target 是「個股 − 指數」，同一時刻其他股票在做什麼很重要，但前面的模型一次只看一檔股票。這裡把同一時點（同一天、同一秒）的約 200 檔股票當成一組，每檔是一個 token（特徵 + stock embedding，不加位置編碼），用 2 層 self-attention（寬度 64、4 個 head）讓每檔股票看到其他股票；同一時點的資料在比賽中是同時給出的，不會用到未來資訊。沒有時間維度，所以保留全部 temporal_wide 特徵。當時沒有資料的股票補位、不參與 attention 也不算進 loss；`tests/test_xformer.py` 檢查補位不影響真實股票、調換股票順序只會讓預測跟著調換，以及改一檔股票會影響其他股票的預測。單一種子 CV 6.1584：5 折都比 GRU 好（0.006–0.021），比 MLP 單一種子（6.1578）略差，最佳 epoch 只有 2–5。與重訓 LightGBM / 3 種子 MLP 的相關係數 0.861 / 0.892；四模型權重 LightGBM 0.41、MLP 0.26、Transformer 0.23、GRU 0.10，ensemble + 後處理從 6.1358 到 6.1348，5 折中 4 折改善（fold 3 差 0.0008）。不放 GRU 的三模型為 6.1352，GRU 的貢獻大多被 Transformer 取代。**只有 CV、沒有跑 holdout**（`reports/xformer/`）；目前只有一個種子、沒調參。
+
+這五個只看 CV 的實驗（學習率 0.02、多種子、GRU、定期重訓、Transformer）各自只帶來約 0.001–0.005 的改善，加起來 ensemble + 後處理的 CV 從 6.1404 到 6.1348。頂端摘要與結果圖仍以有 holdout 驗證的版本為準。
 
 **Holdout 使用了兩次**：第一次評估原本特徵，第二次評估擴充時序特徵。新特徵是依 CV 結果決定的，沒有看過 holdout，所以第二次的分數仍大致公正；但之後若再依 holdout 分數挑選做法，它就不再是乾淨的評估集。
 
@@ -111,8 +123,9 @@ SHAP（原本特徵、最後一折的模型、驗證集抽 2 萬筆）依組加�
 
 - 沒有考慮交易成本與市場衝擊，MAE 好不等於能賺錢
 - 只預測 60 秒，不處理最終收盤價
-- 尚未實作 online 更新（測試期會揭露前一期 target，可增量更新 LightGBM）
-- Transformer（以同時點所有股票為 token 學橫截面）留作延伸
+- 定期重訓目前只做在 LightGBM；MLP、GRU、Transformer 也可以用已揭露的 target 重訓
+- Transformer 只有一個種子、沒調參，也還沒和時間維度（GRU）結合
+- 延伸實驗都只有 CV；最後要挑定一組做法後再動用一次 holdout
 
 ## 7. 如何重現
 
@@ -137,12 +150,16 @@ python -m src.train_nn  --config configs/temporal_wide.yaml
 python -m src.ensemble  --config configs/temporal_wide.yaml --models lgb,nn
 python scripts/plot_results.py                                   # README 頂端的結果圖
 
-# 只跑 CV 的延伸實驗（結果分別寫到 reports/lgb_lr002、mlp_seeds、gru）
+# 只跑 CV 的延伸實驗（結果分別寫到 reports/lgb_lr002、mlp_seeds、gru、lgb_refit、xformer）
 python -m src.train_lgb --config configs/lgb_lr002.yaml
 python -m src.train_nn  --config configs/mlp_seeds.yaml
 python -m src.train_gru --config configs/gru.yaml
 # 三模型 ensemble：把另外兩個模型的 oof_*.parquet 複製到 reports/gru/ 後
 python -m src.ensemble  --config configs/gru.yaml --models lgb,nn,gru
+python -m src.train_lgb --config configs/lgb_refit.yaml     # LightGBM 每 15 天重訓
+python -m src.train_xformer --config configs/xformer.yaml   # 跨股票 Transformer
+# 四模型 ensemble：把 lgb_refit 的 oof_lgb、mlp_seeds 的 oof_nn、gru 的 oof_gru 複製到 reports/xformer/ 後
+python -m src.ensemble  --config configs/xformer.yaml --models lgb,nn,gru,xformer
 ```
 
 沒有資料時可先用合成資料跑通：
@@ -157,9 +174,9 @@ python -m src.train_lgb --config configs/smoke.yaml
 ## Repo 結構
 
 ```
-configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、lgb_lr002 / mlp_seeds / gru.yaml（只跑 CV 的延伸實驗）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
-src/       data · cv · features · index_weights · pipeline · train_lgb · train_nn · train_gru · ensemble · analyze
+configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、lgb_lr002 / mlp_seeds / gru / lgb_refit / xformer.yaml（只跑 CV 的延伸實驗）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
+src/       data · cv · features · index_weights · pipeline · train_lgb · train_nn · train_gru · train_xformer · ensemble · analyze
 scripts/   download_data.sh、make_synthetic.py、plot_results.py
-tests/     CV 切分、洩漏、指數權重估計、GRU 序列與因果性
+tests/     CV 切分、洩漏、指數權重估計、GRU 序列與因果性、重訓排程、Transformer 補位與順序
 reports/   CV log、OOF、ablation、SHAP、結果圖；各實驗設定的結果在同名子資料夾
 ```
