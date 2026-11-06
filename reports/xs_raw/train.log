@@ -1,0 +1,8 @@
+5,237,892 rows, 276 features, 5 folds, holdout 48 days
+fold 0: MAE 6.24325 (predict-0 6.39239) iter 427 [314.4s]
+fold 1: MAE 5.90033 (predict-0 6.02777) iter 339 [327.3s]
+fold 2: MAE 6.38829 (predict-0 6.54058) iter 402 [414.7s]
+fold 3: MAE 6.25469 (predict-0 6.41909) iter 589 [575.8s]
+fold 4: MAE 5.96641 (predict-0 6.12404) iter 478 [586.1s]
+CV MAE 6.14984 | predict-0 6.30008
+exit 0
