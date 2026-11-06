@@ -103,8 +103,10 @@ def _fit_seed(str_, sva, yva, gcfg, n_stocks, seed, epochs=None, verbose=True, b
     Xtr, Ytr = torch.from_numpy(str_.x), torch.from_numpy(str_.y)
     Mtr, Str = torch.from_numpy(str_.mask), torch.from_numpy(str_.stock)
     Xva, Sva = torch.from_numpy(sva.x), torch.from_numpy(sva.stock)
+    dev = device_of(gcfg)
     model = build(Xtr.shape[2]) if build else GRUNet(Xtr.shape[2], n_stocks, gcfg["stock_emb_dim"],
                                                      gcfg["hidden"], gcfg["layers"], gcfg["dropout"])
+    model = model.to(dev)
     opt = torch.optim.AdamW(model.parameters(), lr=gcfg["lr"], weight_decay=gcfg["weight_decay"])
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=1)
     bs, ebs = gcfg["batch_size"], gcfg.get("eval_batch_size", 2048)
@@ -112,7 +114,8 @@ def _fit_seed(str_, sva, yva, gcfg, n_stocks, seed, epochs=None, verbose=True, b
     def predict():
         model.eval()
         with torch.no_grad():
-            p = torch.cat([model(Xva[i:i + ebs], Sva[i:i + ebs]) for i in range(0, len(Xva), ebs)])
+            p = torch.cat([model(Xva[i:i + ebs].to(dev), Sva[i:i + ebs].to(dev)).cpu()
+                           for i in range(0, len(Xva), ebs)])
         return sva.to_rows(p.numpy())
 
     best, best_state, best_epoch, bad = np.inf, None, 0, 0
@@ -122,9 +125,9 @@ def _fit_seed(str_, sva, yva, gcfg, n_stocks, seed, epochs=None, verbose=True, b
         total, n = 0.0, 0
         for i in range(0, len(perm), bs):
             idx = perm[i:i + bs]
-            m = Mtr[idx]
+            m = Mtr[idx].to(dev)  # 資料留在 CPU，每個 batch 才搬到 GPU，避免顯示記憶體不夠
             opt.zero_grad()
-            err = (model(Xtr[idx], Str[idx]) - Ytr[idx]).abs()
+            err = (model(Xtr[idx].to(dev), Str[idx].to(dev)) - Ytr[idx].to(dev)).abs()
             loss = err[m].mean()  # 只算有資料的時點，直接對齊 MAE
             loss.backward()
             opt.step()
@@ -152,6 +155,40 @@ def _fit_seed(str_, sva, yva, gcfg, n_stocks, seed, epochs=None, verbose=True, b
     if verbose:
         print(f"  best val MAE {best:.5f} @ epoch {best_epoch}")
     return predict(), best_epoch
+
+
+def device_of(gcfg) -> torch.device:
+    """device: auto（預設，有 CUDA 就用 GPU）/ cpu / cuda。GPU 與 CPU 的結果不會逐位元相同。"""
+    want = gcfg.get("device", "auto")
+    if want == "auto":
+        want = "cuda" if _cuda_usable() else "cpu"
+    return torch.device(want)
+
+
+def _cuda_usable() -> bool:
+    """is_available() 對 torch 沒編譯到的舊 GPU（例如 Pascal sm_61 配 CUDA 13 版 torch）也會回 True，
+    實際執行才報 no kernel image，所以再確認這張卡的架構在 torch 的支援清單裡。"""
+    if not torch.cuda.is_available():
+        return False
+    major, minor = torch.cuda.get_device_capability(0)
+    archs = torch.cuda.get_arch_list()
+    ok = any(_arch_runs_on(a, major, minor) for a in archs)
+    if not ok:
+        print(f"GPU {torch.cuda.get_device_name(0)} (sm_{major}{minor}) 不在這版 torch 的支援清單 {archs}，改用 CPU")
+    return ok
+
+
+def _arch_runs_on(arch: str, major: int, minor: int) -> bool:
+    """sm_XY 的 cubin 可在同一主版本、次版本 >= Y 的卡上跑（sm_60 → sm_61）；compute_XY（PTX）可 JIT 到更新的卡。"""
+    kind, _, num = arch.partition("_")
+    if not num.isdigit() or len(num) < 2:
+        return False
+    a_major, a_minor = int(num[:-1]), int(num[-1])
+    if kind == "sm":
+        return a_major == major and a_minor <= minor
+    if kind == "compute":
+        return (a_major, a_minor) <= (major, minor)
+    return False
 
 
 def run_holdout(p, cfg, n_stocks, n_steps, epochs: int, out: Path, name: str = "gru", fit=train_fold) -> float:
@@ -189,6 +226,8 @@ def cli(name: str = "gru", fit=train_fold):
         torch.set_num_threads(gcfg["num_threads"])
     out = Path(cfg["output_dir"])
     out.mkdir(parents=True, exist_ok=True)
+    dev = device_of(gcfg)
+    print(f"device: {dev}" + (f" ({torch.cuda.get_device_name(dev)})" if dev.type == "cuda" else ""))
 
     p = prepare(cfg)
     n_stocks = int(p.df["stock_id"].max()) + 1

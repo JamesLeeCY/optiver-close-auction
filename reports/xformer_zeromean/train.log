@@ -1,0 +1,86 @@
+/bml/projects/07_inference-clinical-trial/projects/07-04_ntsec-forest-fmri/side_project/optiver-close-auction/.venv/lib/python3.13/site-packages/torch/cuda/__init__.py:497: UserWarning: Found GPU0 Quadro P4000 which is of compute capability (CC) 6.1.
+The following list shows the CCs this version of PyTorch was built for and the hardware CCs it supports:
+- 7.5 which supports hardware CC >=7.5,<8.0
+- 8.0 which supports hardware CC >=8.0,<9.0
+- 8.6 which supports hardware CC >=8.6,<9.0
+- 9.0 which supports hardware CC >=9.0,<10.0
+- 10.0 which supports hardware CC >=10.0,<11.0 except {10.1}
+- 12.0 which supports hardware CC >=12.0,<13.0
+Your installed torch==2.15.0+cu132 does not include kernels for this GPU. Reinstall the same version against a CUDA build that does, e.g.:
+  For CUDA 12.6 use pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cu126
+  _warn_unsupported_code(d, device_cc, code_ccs)
+/bml/projects/07_inference-clinical-trial/projects/07-04_ntsec-forest-fmri/side_project/optiver-close-auction/.venv/lib/python3.13/site-packages/torch/cuda/__init__.py:627: UserWarning: 
+Quadro P4000 with CUDA capability sm_61 is not compatible with the current PyTorch installation.
+The current PyTorch install supports CUDA capabilities sm_75 sm_80 sm_86 sm_90 sm_100 sm_120.
+If you want to use the Quadro P4000 GPU with PyTorch, please check the instructions at https://pytorch.org/get-started/locally/
+
+  queued_call()
+GPU Quadro P4000 (sm_61) 不在這版 torch 的支援清單 ['sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120']，改用 CPU
+device: cpu
+fold 0
+ 238 features, 11660 train / 2365 val timestamps
+ seed 42
+GPU Quadro P4000 (sm_61) 不在這版 torch 的支援清單 ['sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120']，改用 CPU
+  epoch 0: train MAE 6.45039 val MAE 6.27468
+  epoch 1: train MAE 6.40557 val MAE 6.26385
+  epoch 2: train MAE 6.38689 val MAE 6.25354
+  epoch 3: train MAE 6.36892 val MAE 6.25299
+  epoch 4: train MAE 6.35333 val MAE 6.25095
+  epoch 5: train MAE 6.33976 val MAE 6.25618
+  epoch 6: train MAE 6.32180 val MAE 6.26104
+  epoch 7: train MAE 6.28850 val MAE 6.27221
+  best val MAE 6.25095 @ epoch 5
+fold 0: MAE 6.25095 [917.3s]
+fold 1
+ 238 features, 14025 train / 2365 val timestamps
+ seed 42
+GPU Quadro P4000 (sm_61) 不在這版 torch 的支援清單 ['sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120']，改用 CPU
+  epoch 0: train MAE 6.41433 val MAE 5.92909
+  epoch 1: train MAE 6.37614 val MAE 5.91083
+  epoch 2: train MAE 6.35417 val MAE 5.91367
+  epoch 3: train MAE 6.34036 val MAE 5.91070
+  epoch 4: train MAE 6.31639 val MAE 5.90831
+  epoch 5: train MAE 6.30341 val MAE 5.91161
+  epoch 6: train MAE 6.29218 val MAE 5.91633
+  epoch 7: train MAE 6.27343 val MAE 5.91529
+  best val MAE 5.90831 @ epoch 5
+fold 1: MAE 5.90831 [1098.5s]
+fold 2
+ 238 features, 16390 train / 2365 val timestamps
+ seed 42
+GPU Quadro P4000 (sm_61) 不在這版 torch 的支援清單 ['sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120']，改用 CPU
+  epoch 0: train MAE 6.33574 val MAE 6.40802
+  epoch 1: train MAE 6.29814 val MAE 6.39819
+  epoch 2: train MAE 6.27993 val MAE 6.40283
+  epoch 3: train MAE 6.26729 val MAE 6.39920
+  epoch 4: train MAE 6.24442 val MAE 6.39970
+  best val MAE 6.39819 @ epoch 2
+fold 2: MAE 6.39819 [847.4s]
+fold 3
+ 238 features, 18755 train / 2365 val timestamps
+ seed 42
+GPU Quadro P4000 (sm_61) 不在這版 torch 的支援清單 ['sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120']，改用 CPU
+  epoch 0: train MAE 6.33942 val MAE 6.28825
+  epoch 1: train MAE 6.30239 val MAE 6.27821
+  epoch 2: train MAE 6.28625 val MAE 6.27359
+  epoch 3: train MAE 6.27179 val MAE 6.27298
+  epoch 4: train MAE 6.25905 val MAE 6.27481
+  epoch 5: train MAE 6.23467 val MAE 6.27818
+  epoch 6: train MAE 6.22270 val MAE 6.27313
+  best val MAE 6.27298 @ epoch 4
+fold 3: MAE 6.27298 [1243.4s]
+fold 4
+ 238 features, 21120 train / 2420 val timestamps
+ seed 42
+GPU Quadro P4000 (sm_61) 不在這版 torch 的支援清單 ['sm_75', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120']，改用 CPU
+  epoch 0: train MAE 6.33588 val MAE 5.99114
+  epoch 1: train MAE 6.29845 val MAE 5.98280
+  epoch 2: train MAE 6.28157 val MAE 5.97860
+  epoch 3: train MAE 6.26780 val MAE 5.97831
+  epoch 4: train MAE 6.25475 val MAE 5.96925
+  epoch 5: train MAE 6.24235 val MAE 5.98346
+  epoch 6: train MAE 6.23109 val MAE 5.98947
+  epoch 7: train MAE 6.20607 val MAE 5.98615
+  best val MAE 5.96925 @ epoch 5
+fold 4: MAE 5.96925 [1526.3s]
+CV MAE 6.15915

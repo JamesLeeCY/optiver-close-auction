@@ -1,0 +1,6 @@
+inherit: smoke_xformer.yaml
+
+xformer:
+  zero_mean: true
+
+output_dir: reports/smoke/xformer_zeromean

@@ -1,0 +1,7 @@
+# smoke 版 xformer_seeds：合成資料、折數少，只確認流程跑得通
+inherit: smoke_xformer.yaml
+
+xformer:
+  seeds: [42, 43, 44]
+
+output_dir: reports/smoke/xformer_seeds

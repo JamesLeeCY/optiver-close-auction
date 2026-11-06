@@ -1,0 +1,7 @@
+# 跨股票 Transformer 多種子平均：同一折前處理共用，種子 42 / 43 / 44 各訓練一次、預測取平均
+inherit: xformer.yaml
+
+xformer:
+  seeds: [42, 43, 44]
+
+output_dir: reports/xformer_seeds

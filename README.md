@@ -62,7 +62,15 @@ fold 2: [train ........................]  gap  [val]
 | *再加跨股票 Transformer（`configs/xformer.yaml`，只跑 CV）* | | | |
 | Transformer | 6.1584（−2.25%） | 未跑 | 107 分鐘（6 執行緒） |
 | Ensemble（重訓 LightGBM + MLP + GRU + Transformer） | 6.1369（−2.59%） | 未跑 | — |
-| Ensemble + 指數中性後處理 | **6.1348（−2.62%）** | 未跑 | — |
+| Ensemble + 指數中性後處理 | 6.1348（−2.62%） | 未跑 | — |
+| *Transformer 改為 3 種子平均（`configs/xformer_seeds.yaml`，只跑 CV）* | | | |
+| Transformer（種子 42 / 43 / 44 平均） | 6.1473（−2.43%） | 未跑 | 321 分鐘（6 執行緒） |
+| Ensemble + 指數中性後處理 | 6.1345（−2.63%） | 未跑 | — |
+| *Transformer 輸出零均值（`configs/xformer_zeromean.yaml` / `xformer_zeromean_seeds.yaml`，只跑 CV）* | | | |
+| Transformer + 零均值（單種子） | 6.1592（−2.24%） | 未跑 | 94 分鐘（伺服器 CPU 6 執行緒） |
+| Ensemble + 指數中性後處理 | 6.1342（−2.63%） | 未跑 | — |
+| Transformer + 零均值（3 種子） | 6.1451（−2.46%） | 未跑 | 37 分鐘（GPU，Quadro P4000） |
+| Ensemble + 指數中性後處理 | **6.1323（−2.66%）** | 未跑 | — |
 
 括號內為相對預測 0 的改善。Holdout 為最後 48 天，模型以全部 CV 日期（扣掉 embargo）重新訓練，輪數與 epoch 數取 CV 的平均最佳值（原本特徵：LightGBM 557 輪、MLP 10 epoch；擴充後：566 輪、9 epoch）；ensemble 權重只在 OOF 上決定（原本 0.59 / 0.41，擴充後 0.56 / 0.44），未在 holdout 上調整。兩個資料期間的波動不同，絕對值不能直接比，看相對改善：CV 與 holdout 幾乎一致，代表沒有對驗證期過擬合。
 
@@ -80,7 +88,13 @@ fold 2: [train ........................]  gap  [val]
 
 **跨股票 Transformer**：target 是「個股 − 指數」，同一時刻其他股票在做什麼很重要，但前面的模型一次只看一檔股票。這裡把同一時點（同一天、同一秒）的約 200 檔股票當成一組，每檔是一個 token（特徵 + stock embedding，不加位置編碼），用 2 層 self-attention（寬度 64、4 個 head）讓每檔股票看到其他股票；同一時點的資料在比賽中是同時給出的，不會用到未來資訊。沒有時間維度，所以保留全部 temporal_wide 特徵。當時沒有資料的股票補位、不參與 attention 也不算進 loss；`tests/test_xformer.py` 檢查補位不影響真實股票、調換股票順序只會讓預測跟著調換，以及改一檔股票會影響其他股票的預測。單一種子 CV 6.1584：5 折都比 GRU 好（0.006–0.021），比 MLP 單一種子（6.1578）略差，最佳 epoch 只有 2–5。與重訓 LightGBM / 3 種子 MLP 的相關係數 0.861 / 0.892；四模型權重 LightGBM 0.41、MLP 0.26、Transformer 0.23、GRU 0.10，ensemble + 後處理從 6.1358 到 6.1348，5 折中 4 折改善（fold 3 差 0.0008）。不放 GRU 的三模型為 6.1352，GRU 的貢獻大多被 Transformer 取代。**只有 CV、沒有跑 holdout**（`reports/xformer/`）；目前只有一個種子、沒調參。
 
-這五個只看 CV 的實驗（學習率 0.02、多種子、GRU、定期重訓、Transformer）各自只帶來約 0.001–0.005 的改善，加起來 ensemble + 後處理的 CV 從 6.1404 到 6.1348。頂端摘要與結果圖仍以有 holdout 驗證的版本為準。
+**Transformer 多種子平均**：與 MLP 相同，同一折前處理共用、種子 42 / 43 / 44 各訓練一次取平均。CV 6.1584 → 6.1473，5 折都改善（0.009–0.014），成為最佳單一模型（重訓 LightGBM 為 6.1476）；但與其他模型的相關係數也跟著上升（與 LightGBM 0.861 → 0.888），ensemble + 後處理只從 6.1348 到 6.1345（`reports/xformer_seeds/`）。
+
+**Transformer 輸出零均值**：參考 Kaggle 第一名（hyd）的做法，在模型內把每個時點的輸出減掉真實股票（不含補位）的平均，讓預測本身就是「相對大盤」的形式（`zero_mean: true`，`tests/test_xformer.py` 檢查真實股票的輸出平均為 0 且不受補位影響）。單種子時看不出差別（6.1584 → 6.1592，各折 ±0.007 內，與換種子的變動同級），但與其他模型的相關係數下降約 0.02，ensemble + 後處理到 6.1342。配合 3 種子平均掉隨機誤差後，Transformer 6.1473 → 6.1451，5 折全部改善（0.0004–0.0050）；四模型權重 LightGBM 0.37、MLP 0.16、GRU 0.05、Transformer 0.41，ensemble + 後處理 **6.1323**，是目前所有實驗的最佳 CV（`reports/xformer_zeromean/`、`reports/xformer_zeromean_seeds/`，各有 `RESULTS.md`）。單種子版在實驗室伺服器 CPU 上跑完；3 種子版用伺服器 GPU（Quadro P4000）訓練，5 折 37 分鐘，同設定在本機 CPU 約 5.3 小時。GPU 與 CPU 的結果不會逐位元相同，同折同種子差約 0.004 以內。
+
+這些只看 CV 的實驗（學習率 0.02、多種子、GRU、定期重訓、Transformer 及其多種子與零均值）各自只帶來約 0.001–0.005 的改善，加起來 ensemble + 後處理的 CV 從 6.1404 到 6.1323（相對預測 0 從 −2.53% 到 −2.66%）。頂端摘要與結果圖仍以有 holdout 驗證的版本為準。
+
+**與 Kaggle 第一名比較**：第一名（hyd）用前 400 天訓練、第 400–480 天驗證，CatBoost + GRU + 跨股票 Transformer 的 ensemble 驗證 MAE 5.8117、private LB 5.4030。這段期間預測 0 的 MAE 是 5.9936，所以他相對預測 0 改善 3.03%；我們的 holdout（第 433–480 天）為 −2.49%、CV 最佳 −2.66%。兩者的驗證期不同，只能粗略比較，差距約 0.4–0.5 個百分點。他的後處理與我們相同（減掉指數加權平均），差異主要在定期重訓（測試期 5.4438 → 5.4030）、300 個特徵（含同一時點的橫斷面排名）與 4 層的 GRU / Transformer。
 
 **Holdout 使用了兩次**：第一次評估原本特徵，第二次評估擴充時序特徵。新特徵是依 CV 結果決定的，沒有看過 holdout，所以第二次的分數仍大致公正；但之後若再依 holdout 分數挑選做法，它就不再是乾淨的評估集。
 
@@ -123,8 +137,8 @@ SHAP（原本特徵、最後一折的模型、驗證集抽 2 萬筆）依組加�
 
 - 沒有考慮交易成本與市場衝擊，MAE 好不等於能賺錢
 - 只預測 60 秒，不處理最終收盤價
-- 定期重訓目前只做在 LightGBM；MLP、GRU、Transformer 也可以用已揭露的 target 重訓
-- Transformer 只有一個種子、沒調參，也還沒和時間維度（GRU）結合
+- 定期重訓目前只做在 LightGBM；MLP、GRU、Transformer 也可以用已揭露的 target 重訓（Kaggle 第一名重訓的改善最大）
+- Transformer 還沒調參（層數、寬度），也還沒和時間維度（GRU）結合；第一名的橫斷面排名特徵也還沒試
 - 延伸實驗都只有 CV；最後要挑定一組做法後再動用一次 holdout
 
 ## 7. 如何重現
@@ -160,6 +174,17 @@ python -m src.train_lgb --config configs/lgb_refit.yaml     # LightGBM 每 15 �
 python -m src.train_xformer --config configs/xformer.yaml   # 跨股票 Transformer
 # 四模型 ensemble：把 lgb_refit 的 oof_lgb、mlp_seeds 的 oof_nn、gru 的 oof_gru 複製到 reports/xformer/ 後
 python -m src.ensemble  --config configs/xformer.yaml --models lgb,nn,gru,xformer
+# Transformer 3 種子、零均值、零均值 + 3 種子（ensemble 同樣先複製另外三個模型的 OOF）
+python -m src.train_xformer --config configs/xformer_seeds.yaml
+python -m src.train_xformer --config configs/xformer_zeromean.yaml
+python -m src.train_xformer --config configs/xformer_zeromean_seeds.yaml
+python -m src.ensemble  --config configs/xformer_zeromean_seeds.yaml --models lgb,nn,gru,xformer
+```
+
+GRU / Transformer 有 CUDA 時自動用 GPU（`device: auto`，也可設 `cpu` / `cuda`）；若 torch 沒有編譯這張卡的架構會自動改用 CPU。Pascal（如 Quadro P4000，sm_61）要用 CUDA 12.6 版的 torch，CUDA 13 版已不支援：
+
+```bash
+pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu126
 ```
 
 沒有資料時可先用合成資料跑通：
@@ -174,9 +199,9 @@ python -m src.train_lgb --config configs/smoke.yaml
 ## Repo 結構
 
 ```
-configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、lgb_lr002 / mlp_seeds / gru / lgb_refit / xformer.yaml（只跑 CV 的延伸實驗）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
+configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、lgb_lr002 / mlp_seeds / gru / lgb_refit / xformer / xformer_seeds / xformer_zeromean / xformer_zeromean_seeds.yaml（只跑 CV 的延伸實驗）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
 src/       data · cv · features · index_weights · pipeline · train_lgb · train_nn · train_gru · train_xformer · ensemble · analyze
 scripts/   download_data.sh、make_synthetic.py、plot_results.py
-tests/     CV 切分、洩漏、指數權重估計、GRU 序列與因果性、重訓排程、Transformer 補位與順序
+tests/     CV 切分、洩漏、指數權重估計、GRU 序列與因果性、重訓排程、Transformer 補位、順序與零均值、GPU 架構相容判斷
 reports/   CV log、OOF、ablation、SHAP、結果圖；各實驗設定的結果在同名子資料夾
 ```
