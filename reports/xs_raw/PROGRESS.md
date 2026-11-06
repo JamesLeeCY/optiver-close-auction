@@ -26,7 +26,10 @@
 五折全部進步。新 41 欄佔總 gain 12.9%，最高的是 `imbalance_size_seg_first_ratio`（第 18 名）、
 `imbalance_size_seg_exp_ratio`（22）、`matched_size_xs_rank`（30）。
 
-## 進行中 / 待辦
+## 結果
+全部完成，見 `RESULTS.md`。
+
+## 進行中 / 待辦（已完成，保留原紀錄）
 - ~~LightGBM CV（本機）~~ 已完成（見上）。原紀錄：23:14 開始訓練 fold 0 時，Ollama（llama-server）佔約 7 個核心，CPU 滿載，
   手動停止（沒有任何一折完成）。改由等待程式在 CPU 空出來後自動重跑：從 11-07 01:00 起開始檢查（另一個專案預計 03:00 左右跑完），連續 5 分鐘整體 CPU ≤ 40% 且
   可用 RAM ≥ 20 GB 才開始，最多等 12 小時，紀錄在 `reports/xs_raw/waiter.log`。

@@ -1,0 +1,159 @@
+device: cuda (Quadro P4000)
+fold 0
+ 279 features, 11660 train / 2365 val timestamps
+ seed 42
+  epoch 0: train MAE 6.44658 val MAE 6.26873
+  epoch 1: train MAE 6.40604 val MAE 6.25847
+  epoch 2: train MAE 6.38518 val MAE 6.25035
+  epoch 3: train MAE 6.36811 val MAE 6.24452
+  epoch 4: train MAE 6.35186 val MAE 6.25354
+  epoch 5: train MAE 6.33628 val MAE 6.25681
+  epoch 6: train MAE 6.30470 val MAE 6.26100
+  best val MAE 6.24452 @ epoch 4
+ seed 43
+  epoch 0: train MAE 6.44619 val MAE 6.26247
+  epoch 1: train MAE 6.40301 val MAE 6.26897
+  epoch 2: train MAE 6.38300 val MAE 6.26061
+  epoch 3: train MAE 6.36512 val MAE 6.26485
+  epoch 4: train MAE 6.34874 val MAE 6.25293
+  epoch 5: train MAE 6.33115 val MAE 6.25608
+  epoch 6: train MAE 6.31489 val MAE 6.26724
+  epoch 7: train MAE 6.28041 val MAE 6.27268
+  best val MAE 6.25293 @ epoch 5
+ seed 44
+  epoch 0: train MAE 6.44522 val MAE 6.26630
+  epoch 1: train MAE 6.40413 val MAE 6.25912
+  epoch 2: train MAE 6.38195 val MAE 6.24251
+  epoch 3: train MAE 6.36597 val MAE 6.26193
+  epoch 4: train MAE 6.35117 val MAE 6.26026
+  epoch 5: train MAE 6.31941 val MAE 6.25537
+  best val MAE 6.24251 @ epoch 3
+fold 0: MAE 6.23447 [367.9s]
+fold 1
+ 279 features, 14025 train / 2365 val timestamps
+ seed 42
+  epoch 0: train MAE 6.41480 val MAE 5.92075
+  epoch 1: train MAE 6.37448 val MAE 5.91614
+  epoch 2: train MAE 6.35565 val MAE 5.90852
+  epoch 3: train MAE 6.33980 val MAE 5.90833
+  epoch 4: train MAE 6.32389 val MAE 5.90867
+  epoch 5: train MAE 6.29607 val MAE 5.91285
+  epoch 6: train MAE 6.28319 val MAE 5.91313
+  best val MAE 5.90833 @ epoch 4
+ seed 43
+  epoch 0: train MAE 6.41505 val MAE 5.92027
+  epoch 1: train MAE 6.37391 val MAE 5.91161
+  epoch 2: train MAE 6.35450 val MAE 5.92005
+  epoch 3: train MAE 6.33631 val MAE 5.91019
+  epoch 4: train MAE 6.32203 val MAE 5.90736
+  epoch 5: train MAE 6.30719 val MAE 5.91936
+  epoch 6: train MAE 6.29182 val MAE 5.91450
+  epoch 7: train MAE 6.26147 val MAE 5.92079
+  best val MAE 5.90736 @ epoch 5
+ seed 44
+  epoch 0: train MAE 6.41544 val MAE 5.91959
+  epoch 1: train MAE 6.37408 val MAE 5.91661
+  epoch 2: train MAE 6.35270 val MAE 5.90480
+  epoch 3: train MAE 6.33493 val MAE 5.91660
+  epoch 4: train MAE 6.32148 val MAE 5.90438
+  epoch 5: train MAE 6.29133 val MAE 5.91016
+  epoch 6: train MAE 6.27829 val MAE 5.91875
+  epoch 7: train MAE 6.25657 val MAE 5.91981
+  best val MAE 5.90438 @ epoch 5
+fold 1: MAE 5.89279 [428.6s]
+fold 2
+ 279 features, 16390 train / 2365 val timestamps
+ seed 42
+  epoch 0: train MAE 6.33305 val MAE 6.41584
+  epoch 1: train MAE 6.29641 val MAE 6.40438
+  epoch 2: train MAE 6.27807 val MAE 6.41546
+  epoch 3: train MAE 6.26192 val MAE 6.40413
+  epoch 4: train MAE 6.23740 val MAE 6.40857
+  epoch 5: train MAE 6.22506 val MAE 6.42180
+  epoch 6: train MAE 6.20655 val MAE 6.41243
+  best val MAE 6.40413 @ epoch 4
+ seed 43
+  epoch 0: train MAE 6.33344 val MAE 6.41059
+  epoch 1: train MAE 6.29609 val MAE 6.41437
+  epoch 2: train MAE 6.27987 val MAE 6.40126
+  epoch 3: train MAE 6.26276 val MAE 6.39524
+  epoch 4: train MAE 6.24786 val MAE 6.41967
+  epoch 5: train MAE 6.23451 val MAE 6.40432
+  epoch 6: train MAE 6.20510 val MAE 6.41635
+  best val MAE 6.39524 @ epoch 4
+ seed 44
+  epoch 0: train MAE 6.33187 val MAE 6.41240
+  epoch 1: train MAE 6.29498 val MAE 6.39482
+  epoch 2: train MAE 6.27614 val MAE 6.39739
+  epoch 3: train MAE 6.26098 val MAE 6.39500
+  epoch 4: train MAE 6.23616 val MAE 6.39891
+  best val MAE 6.39482 @ epoch 2
+fold 2: MAE 6.38599 [445.5s]
+fold 3
+ 279 features, 18755 train / 2365 val timestamps
+ seed 42
+  epoch 0: train MAE 6.33699 val MAE 6.28774
+  epoch 1: train MAE 6.29933 val MAE 6.28264
+  epoch 2: train MAE 6.28268 val MAE 6.27873
+  epoch 3: train MAE 6.26869 val MAE 6.26963
+  epoch 4: train MAE 6.25496 val MAE 6.27924
+  epoch 5: train MAE 6.24367 val MAE 6.27186
+  epoch 6: train MAE 6.21708 val MAE 6.26049
+  epoch 7: train MAE 6.20563 val MAE 6.26566
+  epoch 8: train MAE 6.19505 val MAE 6.27984
+  epoch 9: train MAE 6.17745 val MAE 6.28568
+  best val MAE 6.26049 @ epoch 7
+ seed 43
+  epoch 0: train MAE 6.33791 val MAE 6.28941
+  epoch 1: train MAE 6.30108 val MAE 6.28541
+  epoch 2: train MAE 6.28418 val MAE 6.27057
+  epoch 3: train MAE 6.26980 val MAE 6.27296
+  epoch 4: train MAE 6.25655 val MAE 6.29000
+  epoch 5: train MAE 6.23220 val MAE 6.27145
+  best val MAE 6.27057 @ epoch 3
+ seed 44
+  epoch 0: train MAE 6.33708 val MAE 6.29046
+  epoch 1: train MAE 6.30020 val MAE 6.27763
+  epoch 2: train MAE 6.28291 val MAE 6.27470
+  epoch 3: train MAE 6.26891 val MAE 6.27078
+  epoch 4: train MAE 6.25502 val MAE 6.26814
+  epoch 5: train MAE 6.24260 val MAE 6.26325
+  epoch 6: train MAE 6.22931 val MAE 6.26837
+  epoch 7: train MAE 6.21634 val MAE 6.26709
+  epoch 8: train MAE 6.18625 val MAE 6.27394
+  best val MAE 6.26325 @ epoch 6
+fold 3: MAE 6.24792 [576.3s]
+fold 4
+ 279 features, 21120 train / 2420 val timestamps
+ seed 42
+  epoch 0: train MAE 6.33199 val MAE 5.99264
+  epoch 1: train MAE 6.29606 val MAE 5.97895
+  epoch 2: train MAE 6.27884 val MAE 5.97664
+  epoch 3: train MAE 6.26453 val MAE 5.97844
+  epoch 4: train MAE 6.25101 val MAE 5.98268
+  epoch 5: train MAE 6.22655 val MAE 5.97391
+  epoch 6: train MAE 6.21451 val MAE 5.97972
+  epoch 7: train MAE 6.20439 val MAE 5.98420
+  epoch 8: train MAE 6.18547 val MAE 5.98825
+  best val MAE 5.97391 @ epoch 6
+ seed 43
+  epoch 0: train MAE 6.33336 val MAE 5.99011
+  epoch 1: train MAE 6.29821 val MAE 5.98623
+  epoch 2: train MAE 6.28092 val MAE 5.98112
+  epoch 3: train MAE 6.26603 val MAE 5.98703
+  epoch 4: train MAE 6.25266 val MAE 5.98792
+  epoch 5: train MAE 6.22744 val MAE 5.97989
+  epoch 6: train MAE 6.21623 val MAE 5.98148
+  epoch 7: train MAE 6.20528 val MAE 5.98858
+  epoch 8: train MAE 6.18587 val MAE 5.99007
+  best val MAE 5.97989 @ epoch 6
+ seed 44
+  epoch 0: train MAE 6.33303 val MAE 5.98995
+  epoch 1: train MAE 6.29567 val MAE 5.97749
+  epoch 2: train MAE 6.27874 val MAE 5.97455
+  epoch 3: train MAE 6.26434 val MAE 5.98010
+  epoch 4: train MAE 6.25130 val MAE 5.97829
+  epoch 5: train MAE 6.22666 val MAE 5.98042
+  best val MAE 5.97455 @ epoch 3
+fold 4: MAE 5.95781 [630.0s]
+CV MAE 6.14304
