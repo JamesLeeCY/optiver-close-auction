@@ -65,3 +65,12 @@ def test_zero_mean_over_real_stocks():
     x2 = x.clone()
     x2[:, 4:] = torch.randn(3, 2, 5) * 10
     assert torch.allclose(a[:, :4], model(x2, s)[:, :4], atol=1e-6)
+
+
+def test_arch_compatibility():
+    from src.train_gru import _arch_runs_on
+    assert _arch_runs_on("sm_60", 6, 1)          # P4000 (sm_61) 可跑 sm_60 的 cubin
+    assert not _arch_runs_on("sm_70", 6, 1)
+    assert not _arch_runs_on("sm_75", 6, 1)
+    assert _arch_runs_on("sm_120", 12, 0) and not _arch_runs_on("sm_100", 12, 0)
+    assert _arch_runs_on("compute_60", 7, 5) and not _arch_runs_on("compute_80", 7, 5)

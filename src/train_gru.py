@@ -172,10 +172,23 @@ def _cuda_usable() -> bool:
         return False
     major, minor = torch.cuda.get_device_capability(0)
     archs = torch.cuda.get_arch_list()
-    ok = f"sm_{major}{minor}" in archs
+    ok = any(_arch_runs_on(a, major, minor) for a in archs)
     if not ok:
         print(f"GPU {torch.cuda.get_device_name(0)} (sm_{major}{minor}) 不在這版 torch 的支援清單 {archs}，改用 CPU")
     return ok
+
+
+def _arch_runs_on(arch: str, major: int, minor: int) -> bool:
+    """sm_XY 的 cubin 可在同一主版本、次版本 >= Y 的卡上跑（sm_60 → sm_61）；compute_XY（PTX）可 JIT 到更新的卡。"""
+    kind, _, num = arch.partition("_")
+    if not num.isdigit() or len(num) < 2:
+        return False
+    a_major, a_minor = int(num[:-1]), int(num[-1])
+    if kind == "sm":
+        return a_major == major and a_minor <= minor
+    if kind == "compute":
+        return (a_major, a_minor) <= (major, minor)
+    return False
 
 
 def run_holdout(p, cfg, n_stocks, n_steps, epochs: int, out: Path, name: str = "gru", fit=train_fold) -> float:
