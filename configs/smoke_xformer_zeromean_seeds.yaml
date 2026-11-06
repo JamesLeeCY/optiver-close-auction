@@ -1,0 +1,6 @@
+inherit: smoke_xformer_zeromean.yaml
+
+xformer:
+  seeds: [42, 43, 44]
+
+output_dir: reports/smoke/xformer_zeromean_seeds

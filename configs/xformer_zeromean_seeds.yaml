@@ -1,0 +1,7 @@
+# 跨股票 Transformer + 輸出零均值 + 多種子平均：種子 42 / 43 / 44 各訓練一次、預測取平均
+inherit: xformer_zeromean.yaml
+
+xformer:
+  seeds: [42, 43, 44]
+
+output_dir: reports/xformer_zeromean_seeds
