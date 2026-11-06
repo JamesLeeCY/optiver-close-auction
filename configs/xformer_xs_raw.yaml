@@ -1,0 +1,7 @@
+# 零均值 + 3 種子 Transformer（2 層），特徵換成 xs_raw（加原始欄位橫截面與時段分組）
+inherit: xformer_zeromean_seeds.yaml
+
+features:
+  groups: [basic, auction, time, temporal, cross_sectional, xs_raw, segment, index, stock]
+
+output_dir: reports/xformer_xs_raw

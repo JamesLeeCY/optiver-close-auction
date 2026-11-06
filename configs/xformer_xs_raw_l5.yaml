@@ -1,0 +1,7 @@
+# 同 xformer_xs_raw，encoder 從 2 層加深到 5 層
+inherit: xformer_xs_raw.yaml
+
+xformer:
+  layers: 5
+
+output_dir: reports/xformer_xs_raw_l5

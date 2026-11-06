@@ -1,0 +1,9 @@
+inherit: smoke_xformer_zeromean_seeds.yaml
+
+features:
+  groups: [basic, auction, time, temporal, cross_sectional, xs_raw, segment, index, stock]
+
+xformer:
+  layers: 5
+
+output_dir: reports/smoke/xformer_xs_raw_l5
