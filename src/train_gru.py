@@ -161,8 +161,21 @@ def device_of(gcfg) -> torch.device:
     """device: auto（預設，有 CUDA 就用 GPU）/ cpu / cuda。GPU 與 CPU 的結果不會逐位元相同。"""
     want = gcfg.get("device", "auto")
     if want == "auto":
-        want = "cuda" if torch.cuda.is_available() else "cpu"
+        want = "cuda" if _cuda_usable() else "cpu"
     return torch.device(want)
+
+
+def _cuda_usable() -> bool:
+    """is_available() 對 torch 沒編譯到的舊 GPU（例如 Pascal sm_61 配 CUDA 13 版 torch）也會回 True，
+    實際執行才報 no kernel image，所以再確認這張卡的架構在 torch 的支援清單裡。"""
+    if not torch.cuda.is_available():
+        return False
+    major, minor = torch.cuda.get_device_capability(0)
+    archs = torch.cuda.get_arch_list()
+    ok = f"sm_{major}{minor}" in archs
+    if not ok:
+        print(f"GPU {torch.cuda.get_device_name(0)} (sm_{major}{minor}) 不在這版 torch 的支援清單 {archs}，改用 CPU")
+    return ok
 
 
 def run_holdout(p, cfg, n_stocks, n_steps, epochs: int, out: Path, name: str = "gru", fit=train_fold) -> float:
