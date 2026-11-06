@@ -1,0 +1,7 @@
+# 跨股票 Transformer + 輸出零均值（每個時點減掉真實股票的平均，參考 Kaggle 第一名）；其他設定與 xformer.yaml 相同
+inherit: xformer.yaml
+
+xformer:
+  zero_mean: true
+
+output_dir: reports/xformer_zeromean

@@ -52,3 +52,16 @@ def test_other_stocks_matter_and_order_does_not():
     x2 = x.clone()
     x2[:, 5] += 3.0  # 只改第 5 檔股票，其他股票的預測也要跟著變
     assert not torch.allclose(a[:, :5], model(x2, s)[:, :5])
+
+
+def test_zero_mean_over_real_stocks():
+    torch.manual_seed(0)
+    model = XStockNet(n_num=5, n_stocks=6, emb_dim=3, d_model=8, heads=2, layers=2, ff=16, dropout=0.1,
+                      zero_mean=True).eval()
+    x = torch.randn(3, 6, 5)
+    s = torch.tensor([[0, 1, 2, 3, 6, 6]] * 3)
+    a = model(x, s)
+    assert torch.allclose(a[:, :4].mean(1), torch.zeros(3), atol=1e-6)
+    x2 = x.clone()
+    x2[:, 4:] = torch.randn(3, 2, 5) * 10
+    assert torch.allclose(a[:, :4], model(x2, s)[:, :4], atol=1e-6)

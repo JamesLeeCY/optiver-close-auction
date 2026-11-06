@@ -24,9 +24,10 @@ class XStockNet(nn.Module):
     """stock id == n_stocks 的位置是補位，attention 不看它、也不算進 loss。"""
 
     def __init__(self, n_num: int, n_stocks: int, emb_dim: int, d_model: int, heads: int,
-                 layers: int, ff: int, dropout: float):
+                 layers: int, ff: int, dropout: float, zero_mean: bool = False):
         super().__init__()
         self.pad = n_stocks
+        self.zero_mean = zero_mean
         self.emb = nn.Embedding(n_stocks + 1, emb_dim, padding_idx=n_stocks)
         self.inp = nn.Sequential(nn.Linear(n_num + emb_dim, d_model), nn.SiLU())
         layer = nn.TransformerEncoderLayer(d_model, heads, ff, dropout, activation="gelu",
@@ -38,8 +39,13 @@ class XStockNet(nn.Module):
     def forward(self, x, s):
         """x: [B, N, F]，s: [B, N] → [B, N]"""
         h = self.inp(torch.cat([x, self.emb(s)], dim=2))
-        o = self.enc(h, src_key_padding_mask=s == self.pad)
-        return self.head(torch.cat([o, h], dim=2)).squeeze(-1)
+        pad = s == self.pad
+        o = self.enc(h, src_key_padding_mask=pad)
+        out = self.head(torch.cat([o, h], dim=2)).squeeze(-1)
+        if self.zero_mean:  # 每個時點減掉真實股票的平均，讓輸出本身就是零均值（第一名的做法）
+            real = (~pad).float()
+            out = out - (out * real).sum(1, keepdim=True) / real.sum(1, keepdim=True).clamp(min=1)
+        return out
 
 
 class Groups:
@@ -77,7 +83,7 @@ def train_fold(tr, va, feats, xcfg, n_stocks, n_steps, epochs=None, verbose=True
 
     def build(n_num):
         return XStockNet(n_num, n_stocks, xcfg["stock_emb_dim"], xcfg["d_model"], xcfg["heads"],
-                         xcfg["layers"], xcfg["ff"], xcfg["dropout"])
+                         xcfg["layers"], xcfg["ff"], xcfg["dropout"], xcfg.get("zero_mean", False))
 
     preds, best_epochs = {}, []
     for seed in seeds_of(xcfg):
