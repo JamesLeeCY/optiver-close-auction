@@ -1,0 +1,9 @@
+# temporal_wide + Kaggle 第一名的兩組特徵：
+#   xs_raw：原始欄位在同一時點的排名與「相對平均的倍數」
+#   segment：把一天切成 0–300 / 300–480 / 480 秒後三段，相對該段開頭與該段至今平均的倍數
+inherit: temporal_wide.yaml
+
+features:
+  groups: [basic, auction, time, temporal, cross_sectional, xs_raw, segment, index, stock]
+
+output_dir: reports/xs_raw

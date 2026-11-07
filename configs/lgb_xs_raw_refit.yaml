@@ -1,0 +1,8 @@
+# xs_raw 特徵（加原始欄位橫截面與時段分組）的 LightGBM，驗證期每 15 天用已揭露的 target 重訓一次
+inherit: xs_raw.yaml
+
+refit:
+  every_days: 15
+  gap_days: 0            # 第 d 天可用到 d-1 天的 target（比賽 API 每天公布前一天的 target）
+
+output_dir: reports/lgb_xs_raw_refit

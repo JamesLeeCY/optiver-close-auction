@@ -70,7 +70,12 @@ fold 2: [train ........................]  gap  [val]
 | Transformer + 零均值（單種子） | 6.1592（−2.24%） | 未跑 | 94 分鐘（伺服器 CPU 6 執行緒） |
 | Ensemble + 指數中性後處理 | 6.1342（−2.63%） | 未跑 | — |
 | Transformer + 零均值（3 種子） | 6.1451（−2.46%） | 未跑 | 37 分鐘（GPU，Quadro P4000） |
-| Ensemble + 指數中性後處理 | **6.1323（−2.66%）** | 未跑 | — |
+| Ensemble + 指數中性後處理 | 6.1323（−2.66%） | 未跑 | — |
+| *加入原始欄位橫斷面排名 + 時段分組特徵（`configs/xs_raw.yaml` 等，280 個，只跑 CV）* | | | |
+| LightGBM（不重訓） | 6.1498（−2.38%） | 未跑 | 37 分鐘（6 執行緒） |
+| LightGBM（每 15 天重訓） | 6.1451（−2.46%） | 未跑 | 159 分鐘（6 執行緒） |
+| Transformer + 零均值（3 種子） | 6.1430（−2.49%） | 未跑 | 41 分鐘（GPU，Quadro P4000） |
+| Ensemble（新舊兩個重訓 LightGBM + MLP + GRU + Transformer）+ 指數中性 | **6.1307（−2.69%）** | 未跑 | — |
 
 括號內為相對預測 0 的改善。Holdout 為最後 48 天，模型以全部 CV 日期（扣掉 embargo）重新訓練，輪數與 epoch 數取 CV 的平均最佳值（原本特徵：LightGBM 557 輪、MLP 10 epoch；擴充後：566 輪、9 epoch）；ensemble 權重只在 OOF 上決定（原本 0.59 / 0.41，擴充後 0.56 / 0.44），未在 holdout 上調整。兩個資料期間的波動不同，絕對值不能直接比，看相對改善：CV 與 holdout 幾乎一致，代表沒有對驗證期過擬合。
 
@@ -90,11 +95,13 @@ fold 2: [train ........................]  gap  [val]
 
 **Transformer 多種子平均**：與 MLP 相同，同一折前處理共用、種子 42 / 43 / 44 各訓練一次取平均。CV 6.1584 → 6.1473，5 折都改善（0.009–0.014），成為最佳單一模型（重訓 LightGBM 為 6.1476）；但與其他模型的相關係數也跟著上升（與 LightGBM 0.861 → 0.888），ensemble + 後處理只從 6.1348 到 6.1345（`reports/xformer_seeds/`）。
 
-**Transformer 輸出零均值**：參考 Kaggle 第一名（hyd）的做法，在模型內把每個時點的輸出減掉真實股票（不含補位）的平均，讓預測本身就是「相對大盤」的形式（`zero_mean: true`，`tests/test_xformer.py` 檢查真實股票的輸出平均為 0 且不受補位影響）。單種子時看不出差別（6.1584 → 6.1592，各折 ±0.007 內，與換種子的變動同級），但與其他模型的相關係數下降約 0.02，ensemble + 後處理到 6.1342。配合 3 種子平均掉隨機誤差後，Transformer 6.1473 → 6.1451，5 折全部改善（0.0004–0.0050）；四模型權重 LightGBM 0.37、MLP 0.16、GRU 0.05、Transformer 0.41，ensemble + 後處理 **6.1323**，是目前所有實驗的最佳 CV（`reports/xformer_zeromean/`、`reports/xformer_zeromean_seeds/`，各有 `RESULTS.md`）。單種子版在實驗室伺服器 CPU 上跑完；3 種子版用伺服器 GPU（Quadro P4000）訓練，5 折 37 分鐘，同設定在本機 CPU 約 5.3 小時。GPU 與 CPU 的結果不會逐位元相同，同折同種子差約 0.004 以內。
+**Transformer 輸出零均值**：參考 Kaggle 第一名（hyd）的做法，在模型內把每個時點的輸出減掉真實股票（不含補位）的平均，讓預測本身就是「相對大盤」的形式（`zero_mean: true`，`tests/test_xformer.py` 檢查真實股票的輸出平均為 0 且不受補位影響）。單種子時看不出差別（6.1584 → 6.1592，各折 ±0.007 內，與換種子的變動同級），但與其他模型的相關係數下降約 0.02，ensemble + 後處理到 6.1342。配合 3 種子平均掉隨機誤差後，Transformer 6.1473 → 6.1451，5 折全部改善（0.0004–0.0050）；四模型權重 LightGBM 0.37、MLP 0.16、GRU 0.05、Transformer 0.41，ensemble + 後處理 6.1323（`reports/xformer_zeromean/`、`reports/xformer_zeromean_seeds/`，各有 `RESULTS.md`）。單種子版在實驗室伺服器 CPU 上跑完；3 種子版用伺服器 GPU（Quadro P4000）訓練，5 折 37 分鐘，同設定在本機 CPU 約 5.3 小時。GPU 與 CPU 的結果不會逐位元相同，同折同種子差約 0.004 以內。
 
-這些只看 CV 的實驗（學習率 0.02、多種子、GRU、定期重訓、Transformer 及其多種子與零均值）各自只帶來約 0.001–0.005 的改善，加起來 ensemble + 後處理的 CV 從 6.1404 到 6.1323（相對預測 0 從 −2.53% 到 −2.66%）。頂端摘要與結果圖仍以有 holdout 驗證的版本為準。
+**原始欄位橫斷面排名 + 時段分組特徵**：同樣參考第一名，加兩組共 41 個特徵（239 → 280）。`xs_raw`：10 個原始欄位（imbalance_size、reference_price、matched_size、far / near price、bid / ask price 與 size、wap）在同一時點的排名與「除以同時點平均」。`segment`：把一天切成 0–300 / 300–480 / 480 秒以後三段（300 秒才開始有 far / near price），同樣 10 欄除以「該段第一個值」與「該段至今平均」，只用當下以前的資料。`tests/test_leakage.py` 在三段內各切一刀竄改未來、只竄改其他時點，確認特徵不變。LightGBM 不重訓 6.1525 → 6.1498、每 15 天重訓 6.1476 → 6.1451，Transformer（零均值 + 3 種子）6.1451 → 6.1430，三者都是 5 折中至少 4 折改善。新特徵佔 LightGBM 總 gain 13%，最有用的是 `imbalance_size_seg_first_ratio`（未配對量相對該段開始時的倍數）。但 ensemble 只從 6.1323 到 6.1311：新特徵讓 LightGBM 與 Transformer 更相似（相關係數 0.871 → 0.883）。把新舊兩個重訓 LightGBM 都放進 ensemble（權重 0.23 / 0.19，MLP 0.14、GRU 0.03、Transformer 0.42）最好，**6.1307**，是目前所有實驗的最佳 CV（`reports/xs_raw/RESULTS.md`、`reports/lgb_xs_raw_refit/`、`reports/xformer_xs_raw/`、`reports/ensemble_xs_raw/`）。Transformer 從 2 層加到 5 層（`xformer_xs_raw_l5.yaml`）沒有幫助（6.1447），見第 5 節。
 
-**與 Kaggle 第一名比較**：第一名（hyd）用前 400 天訓練、第 400–480 天驗證，CatBoost + GRU + 跨股票 Transformer 的 ensemble 驗證 MAE 5.8117、private LB 5.4030。這段期間預測 0 的 MAE 是 5.9936，所以他相對預測 0 改善 3.03%；我們的 holdout（第 433–480 天）為 −2.49%、CV 最佳 −2.66%。兩者的驗證期不同，只能粗略比較，差距約 0.4–0.5 個百分點。他的後處理與我們相同（減掉指數加權平均），差異主要在定期重訓（測試期 5.4438 → 5.4030）、300 個特徵（含同一時點的橫斷面排名）與 4 層的 GRU / Transformer。
+這些只看 CV 的實驗（學習率 0.02、多種子、GRU、定期重訓、Transformer 及其多種子與零均值、橫斷面排名與時段分組特徵）各自只帶來約 0.001–0.005 的改善，加起來 ensemble + 後處理的 CV 從 6.1404 到 6.1307（相對預測 0 從 −2.53% 到 −2.69%）。頂端摘要與結果圖仍以有 holdout 驗證的版本為準。
+
+**與 Kaggle 第一名比較**：第一名（hyd）用前 400 天訓練、第 400–480 天驗證，CatBoost + GRU + 跨股票 Transformer 的 ensemble 驗證 MAE 5.8117、private LB 5.4030。這段期間預測 0 的 MAE 是 5.9936，所以他相對預測 0 改善 3.03%；我們的 holdout（第 433–480 天）為 −2.49%、CV 最佳 −2.69%。兩者的驗證期不同，只能粗略比較，差距約 0.3–0.5 個百分點。他的後處理與我們相同（減掉指數加權平均），差異主要在所有模型都定期重訓（測試期 5.4438 → 5.4030；我們只有 LightGBM 重訓）、更多特徵與 4 層的 GRU / Transformer。他的橫斷面排名與時段分組特徵我們已照做（見上）。
 
 **Holdout 使用了兩次**：第一次評估原本特徵，第二次評估擴充時序特徵。新特徵是依 CV 結果決定的，沒有看過 holdout，所以第二次的分數仍大致公正；但之後若再依 holdout 分數挑選做法，它就不再是乾淨的評估集。
 
@@ -131,14 +138,16 @@ SHAP（原本特徵、最後一折的模型、驗證集抽 2 萬筆）依組加�
 1. **前一天已揭露的 target**（`configs/revealed.yaml`）：比賽 API 每天開盤前會公布前一天的 target，加入同股同秒的前一天 target、前一天平均與平均絕對值。CV 只改善 0.0011，5 折從 −0.0025 到 +0.0003 不一致，在折間雜訊範圍內，沒有採用。這三個特徵在重要度排第 13–23 名，模型確實會用，但它們提供的「這檔股票最近多會動」已經由個股波動度（stock 組）與當天的時序特徵涵蓋；60 秒超額報酬跨日的自我相關很弱，前一天同一秒的值幾乎沒有方向資訊。
 2. **時序特徵的橫截面版本**（`configs/xs_temporal.yaml`）：把 6 格與 24 格報酬、失衡變化、相對開盤變化等，再做同時點的排名與去平均。CV 只改善 0.0004，等於沒有差別。其中 `wap_since_open_xs_demean` 等排進重要度前 15 名，但只是取代了原本的特徵：index 組的「個股報酬減指數報酬」已經是一種橫截面相對值。這和 ablation 中 cross_sectional 組拿掉幾乎沒影響（+0.0002）是同一件事——**重要度高不等於有增量貢獻**。
 3. **最佳化 ensemble 權重**：在 OOF 上用 SLSQP 找最小 MAE 的權重，CV 6.1522，簡單平均 6.1525，差距可忽略。兩個模型實力相近、相關係數 0.88–0.89，最佳權重本來就接近一半一半；真正有用的是降低兩模型的相關性（擴充時序特徵後 ensemble 的改善比單一模型大）。
-4. **改良指數權重估計**：原方法只用所有股票都有資料的時點，資料少時會無法估計；改成用全部時點後，在全量資料上新舊權重的相關係數 0.99997，重建指數的誤差都是 0.061 bps，分數沒有變化。這個修正提升的是小資料試跑時的穩健性，不是準確度。
+4. **加深 Transformer**（`configs/xformer_xs_raw_l5.yaml`）：與第一名的 4 層相近，把 2 層加到 5 層，其他不變。CV 6.1430 → 6.1447，前兩折略好、後三折略差，差距在換種子的變動範圍內；平均訓練 MAE 也幾乎一樣（6.2961 vs 6.2982），最佳 epoch 同樣在 3–5，代表多出來的容量沒有被用上。訊號雜訊比很低（最好的模型也只比預測 0 好約 2.5%），需要的跨股票關係（扣掉共同漲跌、比較相對高低）2 層就足以表達，每折卻慢約 1.5 倍，因此維持 2 層。
+5. **改良指數權重估計**：原方法只用所有股票都有資料的時點，資料少時會無法估計；改成用全部時點後，在全量資料上新舊權重的相關係數 0.99997，重建指數的誤差都是 0.061 bps，分數沒有變化。這個修正提升的是小資料試跑時的穩健性，不是準確度。
 
 ## 6. 限制與下一步
 
 - 沒有考慮交易成本與市場衝擊，MAE 好不等於能賺錢
 - 只預測 60 秒，不處理最終收盤價
 - 定期重訓目前只做在 LightGBM；MLP、GRU、Transformer 也可以用已揭露的 target 重訓（Kaggle 第一名重訓的改善最大）
-- Transformer 還沒調參（層數、寬度），也還沒和時間維度（GRU）結合；第一名的橫斷面排名特徵也還沒試
+- Transformer 加深到 5 層沒有幫助，寬度、學習率等還沒調；也還沒和時間維度（GRU）結合
+- MLP、GRU 還沒改用橫斷面排名與時段分組特徵
 - 延伸實驗都只有 CV；最後要挑定一組做法後再動用一次 holdout
 
 ## 7. 如何重現
@@ -179,6 +188,14 @@ python -m src.train_xformer --config configs/xformer_seeds.yaml
 python -m src.train_xformer --config configs/xformer_zeromean.yaml
 python -m src.train_xformer --config configs/xformer_zeromean_seeds.yaml
 python -m src.ensemble  --config configs/xformer_zeromean_seeds.yaml --models lgb,nn,gru,xformer
+# 橫斷面排名 + 時段分組特徵（結果寫到 reports/xs_raw、lgb_xs_raw_refit、xformer_xs_raw、xformer_xs_raw_l5）
+python -m src.train_lgb --config configs/xs_raw.yaml
+python -m src.train_lgb --config configs/lgb_xs_raw_refit.yaml
+python -m src.train_xformer --config configs/xformer_xs_raw.yaml
+python -m src.train_xformer --config configs/xformer_xs_raw_l5.yaml
+# 最佳 ensemble：把兩個重訓 LightGBM 的 OOF 存成 oof_lgb / oof_lgbold，連同 mlp_seeds 的 oof_nn、gru 的 oof_gru、
+# xformer_xs_raw 的 oof_xformer 放到同一個 output_dir 後
+python -m src.ensemble  --config <該 output_dir 的設定> --models lgb,lgbold,nn,gru,xformer
 ```
 
 GRU / Transformer 有 CUDA 時自動用 GPU（`device: auto`，也可設 `cpu` / `cuda`）；若 torch 沒有編譯這張卡的架構會自動改用 CPU。Pascal（如 Quadro P4000，sm_61）要用 CUDA 12.6 版的 torch，CUDA 13 版已不支援：
@@ -199,9 +216,9 @@ python -m src.train_lgb --config configs/smoke.yaml
 ## Repo 結構
 
 ```
-configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、lgb_lr002 / mlp_seeds / gru / lgb_refit / xformer / xformer_seeds / xformer_zeromean / xformer_zeromean_seeds.yaml（只跑 CV 的延伸實驗）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
+configs/   base.yaml（原本特徵）、temporal_wide.yaml（目前最佳）、lgb_lr002 / mlp_seeds / gru / lgb_refit / xformer / xformer_seeds / xformer_zeromean / xformer_zeromean_seeds / xs_raw / lgb_xs_raw_refit / xformer_xs_raw / xformer_xs_raw_l5.yaml（只跑 CV 的延伸實驗）、revealed / xs_temporal（未採用的實驗）、smoke*.yaml（合成資料）
 src/       data · cv · features · index_weights · pipeline · train_lgb · train_nn · train_gru · train_xformer · ensemble · analyze
 scripts/   download_data.sh、make_synthetic.py、plot_results.py
-tests/     CV 切分、洩漏、指數權重估計、GRU 序列與因果性、重訓排程、Transformer 補位、順序與零均值、GPU 架構相容判斷
+tests/     CV 切分、洩漏（含橫斷面排名與時段分組特徵）、指數權重估計、GRU 序列與因果性、重訓排程、Transformer 補位、順序與零均值、GPU 架構相容判斷
 reports/   CV log、OOF、ablation、SHAP、結果圖；各實驗設定的結果在同名子資料夾
 ```

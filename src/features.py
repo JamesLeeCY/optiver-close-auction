@@ -18,6 +18,8 @@ EPS = 1e-9
 SEQ = ["stock_id", "date_id"]          # 同股同日的時間序列
 XS = ["date_id", "seconds_in_bucket"]  # 同一時點的橫截面
 NON_FEATURES = {"target", "date_id", "row_id", "time_id"}
+RAW_COLS = ["imbalance_size", "reference_price", "matched_size", "far_price", "near_price",
+            "bid_price", "bid_size", "ask_price", "ask_size", "wap"]
 
 
 def _f32(s) -> pd.Series:
@@ -116,6 +118,40 @@ def add_cross_sectional(df: pd.DataFrame, cols) -> pd.DataFrame:
     return pd.concat([df, pd.DataFrame(new, index=df.index)], axis=1)
 
 
+# ---------- 原始欄位的橫截面（Kaggle 第一名）：同一時點排第幾、相對平均是幾倍 ----------
+def add_xs_raw(df: pd.DataFrame, cols) -> pd.DataFrame:
+    cols = [c for c in cols if c in df.columns]
+    g = df.groupby(XS, sort=False)
+    new = {}
+    for c in cols:
+        x = df[c].astype(np.float64)
+        new[f"{c}_xs_rank"] = _f32(g[c].rank(pct=True))
+        new[f"{c}_xs_mratio"] = _f32(x / g[c].transform("mean").replace(0, np.nan))
+    return pd.concat([df, pd.DataFrame(new, index=df.index)], axis=1)
+
+
+# ---------- 時段分組（Kaggle 第一名）：0–300 / 300–480 / 480 秒後三段，相對該段開頭與該段至今平均 ----------
+SEG_EDGES = (300, 480)
+
+
+def add_segment(df: pd.DataFrame, cols) -> pd.DataFrame:
+    """只用同股同日、同一時段內「含當下以前」的資料。"""
+    cols = [c for c in cols if c in df.columns]
+    sec = df["seconds_in_bucket"].to_numpy()
+    seg = np.searchsorted(np.asarray(SEG_EDGES), sec, side="right").astype(np.int8)
+    keys = [df["stock_id"], df["date_id"], pd.Series(seg, index=df.index)]
+    new = {"seg_id": seg}
+    for c in cols:
+        x = df[c].astype(np.float64)
+        cs = x.fillna(0).groupby(keys, sort=False).cumsum()
+        cnt = x.notna().astype(np.float64).groupby(keys, sort=False).cumsum()
+        # 段內到目前為止的第一個非缺值：在「計數剛變成 1」的那格取值，再往後 ffill（不會用到未來）
+        first = x.where((cnt == 1) & x.notna()).groupby(keys, sort=False).ffill()
+        new[f"{c}_seg_exp_ratio"] = _f32(x / (cs / cnt.replace(0, np.nan)).replace(0, np.nan))
+        new[f"{c}_seg_first_ratio"] = _f32(x / first.replace(0, np.nan))
+    return pd.concat([df, pd.DataFrame(new, index=df.index)], axis=1)
+
+
 # ---------- 指數相對：用（估計的）指數權重重建同時點的指數報酬 ----------
 def add_index_relative(df: pd.DataFrame, weights: pd.Series | None) -> pd.DataFrame:
     if "wap_ret_1" not in df.columns:
@@ -195,6 +231,10 @@ def build_features(df: pd.DataFrame, fcfg: dict, index_weights: pd.Series | None
                           t.get("ret_horizons", (1, 3, 6)), t.get("open_cols", ()))
     if "cross_sectional" in groups:
         df = add_cross_sectional(df, fcfg.get("cross_sectional", {}).get("cols", []))
+    if "xs_raw" in groups:
+        df = add_xs_raw(df, fcfg.get("xs_raw", {}).get("cols", RAW_COLS))
+    if "segment" in groups:
+        df = add_segment(df, fcfg.get("segment", {}).get("cols", RAW_COLS))
     if "index" in groups:
         df = add_index_relative(df, index_weights)
     if "revealed" in groups:
@@ -219,7 +259,10 @@ def feature_groups(cols: list[str]) -> dict[str, list[str]]:
         "time": lambda c: c in {"after_300", "time_to_close"},
         "temporal": lambda c: any(s in c for s in ("_lag", "_diff", "_rmean", "_since_open")) or
                               (c.startswith("wap_ret_")),
-        "cross_sectional": lambda c: "_xs_" in c,
+        "cross_sectional": lambda c: "_xs_" in c and not c.endswith(("_xs_mratio",)) and
+                                     not any(c == f"{r}_xs_rank" for r in RAW_COLS),
+        "xs_raw": lambda c: c.endswith("_xs_mratio") or any(c == f"{r}_xs_rank" for r in RAW_COLS),
+        "segment": lambda c: "_seg_" in c or c == "seg_id",
         "index": lambda c: c.startswith(("idx_", "rel_")) or c.endswith("_idx") or c == "index_weight",
         "stock": lambda c: c in StockStats.COLS,
         "revealed": lambda c: c.startswith("tgt_prev_day"),

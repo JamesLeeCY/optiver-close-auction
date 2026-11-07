@@ -107,3 +107,43 @@ def test_revealed_target_uses_only_previous_day(synth):
     assert np.allclose(cur, prev.reindex(cur.index).astype(np.float32), equal_nan=True)
     cfg = load_config(Path(__file__).parents[1] / "configs" / "revealed.yaml")["features"]
     assert "revealed" in cfg["groups"]
+
+
+def _xs_raw_cfg():
+    from src.config import load_config
+    from pathlib import Path
+    return load_config(Path(__file__).parents[1] / "configs" / "xs_raw.yaml")["features"]
+
+
+def test_xs_raw_and_segment_do_not_use_future_seconds(synth):
+    df, w = synth
+    fcfg = _xs_raw_cfg()
+    for cutoff in (250, 400, 500):  # 分別落在三個時段裡
+        future = (df["seconds_in_bucket"] > cutoff).to_numpy()
+        a = build_features(df, fcfg, w)
+        b = build_features(_perturb(df, future, seed=cutoff), fcfg, w)
+        assert any("_seg_first_ratio" in c for c in a.columns) and any("_xs_mratio" in c for c in a.columns)
+        _assert_same(a, b, ~future)
+
+
+def test_xs_raw_uses_same_timestamp_only(synth):
+    df, w = synth
+    cfg = {**_xs_raw_cfg(), "groups": ["xs_raw"]}
+    ts = (df["date_id"] == 3) & (df["seconds_in_bucket"] == 200)
+    a = build_features(df, cfg, w)
+    b = build_features(_perturb(df, ~ts.to_numpy()), cfg, w)
+    cols = [c for c in a.columns if c.endswith(("_xs_rank", "_xs_mratio"))]
+    assert len(cols) == 20
+    pd.testing.assert_frame_equal(a.loc[ts, cols], b.loc[ts, cols], check_exact=False, rtol=1e-6)
+
+
+def test_segment_first_is_first_value_of_segment(synth):
+    from src.features import add_segment
+    df, _ = synth
+    out = add_segment(df, ["wap"])
+    one = out[(out["stock_id"] == 0) & (out["date_id"] == 1)]
+    for seg in range(3):
+        s = one[one["seg_id"] == seg]
+        if len(s):
+            first = s["wap"].dropna().iloc[0]
+            np.testing.assert_allclose(s["wap_seg_first_ratio"], s["wap"] / first, rtol=1e-5)
