@@ -32,5 +32,31 @@ MLP、GRU 沿用舊特徵版本；Transformer 都換成新特徵 2 層。
 
 - 換上新特徵 Transformer 後，ensemble 6.13233 → **6.13134**（−0.0010），相對預測 0（6.30008）改善 2.68%。
 - 新特徵 LightGBM 沒有重訓，單模型仍輸重訓舊特徵版（6.14984 vs 6.14762），所以 B 較差；
-  C 只多改善 0.00005。公平比較需要「新特徵 + 每 15 天重訓」的 LightGBM（`lgb_refit` 加上新特徵組），尚未跑。
+  C 只多改善 0.00005。因此再跑了「新特徵 + 每 15 天重訓」的 LightGBM（見下節）。
 - 只有 CV、沒有跑 holdout。各 ensemble 報告在 `reports/ensemble_xs_raw/{A_oldlgb,B_newlgb,C_bothlgb}/`。
+
+## 新特徵 + 每 15 天重訓的 LightGBM（2026-11-07 08:01–10:40）
+
+設定 `configs/lgb_xs_raw_refit.yaml`（xs_raw 特徵 + `refit.every_days: 15`），本機 6 執行緒，2 小時 39 分。
+
+| fold | 重訓 舊特徵（lgb_refit） | 重訓 新特徵 | 差 |
+| --- | --- | --- | --- |
+| 0 | 6.23981 | 6.23612 | −0.0037 |
+| 1 | 5.89771 | 5.89756 | −0.0002 |
+| 2 | 6.38472 | 6.38246 | −0.0023 |
+| 3 | 6.25489 | 6.25103 | −0.0039 |
+| 4 | 5.96473 | 5.96196 | −0.0028 |
+| CV | 6.14762 | **6.14508**（−0.0025） | |
+
+5 折全部進步，重訓本身再比不重訓（6.14984）好 0.0048。
+
+| ensemble | 權重 | ensemble + 指數中性 |
+| --- | --- | --- |
+| A：重訓 LightGBM 舊特徵 + MLP + GRU + 新 Transformer | 0.36 / 0.14 / 0.04 / 0.45 | 6.13134 |
+| D：重訓 LightGBM 新特徵 + MLP + GRU + 新 Transformer | 0.38 / 0.16 / 0.04 / 0.41 | 6.13115 |
+| **E：兩個重訓 LightGBM（新 0.23 + 舊 0.19）+ MLP + GRU + 新 Transformer** | 0.23 + 0.19 / 0.14 / 0.03 / 0.42 | **6.13070** |
+
+- LightGBM 單模型進步 0.0025，但 ensemble 只多改善 0.0002（D vs A）：新特徵 LightGBM 和 Transformer 的相關係數
+  從 0.871 升到 0.883，兩者學到的東西更重疊，ensemble 的互補效果變小。
+- 新舊兩個 LightGBM 都放（E）最好，**6.13070**，比先前最佳 6.13233 共改善 0.0016，相對預測 0 改善 2.69%。
+- 仍只有 CV、沒有跑 holdout。報告在 `reports/ensemble_xs_raw/{D_newrefit,E_bothrefit}/`。

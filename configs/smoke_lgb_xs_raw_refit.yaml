@@ -1,0 +1,7 @@
+# smoke 版 lgb_xs_raw_refit：合成資料、折數少，只確認流程跑得通
+inherit: smoke_lgb_refit.yaml
+
+features:
+  groups: [basic, auction, time, temporal, cross_sectional, xs_raw, segment, index, stock]
+
+output_dir: reports/smoke/lgb_xs_raw_refit

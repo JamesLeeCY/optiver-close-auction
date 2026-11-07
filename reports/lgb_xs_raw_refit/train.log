@@ -1,0 +1,18 @@
+5,237,892 rows, 276 features, 5 folds, holdout 48 days
+  refit 1: +20 days, predict 232-246 [487s]
+  refit 2: +35 days, predict 247-259 [323s]
+fold 0: MAE refit 6.23612 vs static 6.24325 (-0.00713) iter 427 [1145.8s]
+  refit 1: +20 days, predict 275-289 [402s]
+  refit 2: +35 days, predict 290-302 [393s]
+fold 1: MAE refit 5.89756 vs static 5.90033 (-0.00277) iter 339 [1249.4s]
+  refit 1: +20 days, predict 318-332 [634s]
+  refit 2: +35 days, predict 333-345 [669s]
+fold 2: MAE refit 6.38246 vs static 6.38829 (-0.00584) iter 402 [2028.6s]
+  refit 1: +20 days, predict 361-375 [829s]
+  refit 2: +35 days, predict 376-388 [856s]
+fold 3: MAE refit 6.25103 vs static 6.25469 (-0.00366) iter 589 [2624.3s]
+  refit 1: +20 days, predict 404-418 [784s]
+  refit 2: +35 days, predict 419-432 [831s]
+fold 4: MAE refit 5.96196 vs static 5.96641 (-0.00444) iter 478 [2501.2s]
+CV MAE refit 6.14508 | static 6.14984 | predict-0 6.30008
+exit 0
